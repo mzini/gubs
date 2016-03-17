@@ -1,24 +1,51 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeFamilies #-}
-module GUBS.Solver.Class where
+module GUBS.Solver.Class (
+  SMTSolver (..)
+  , Solver
+  , stack
+  , evalM
+  , Constrt (..)
+  , geq
+  , leq
+  ) where
 
-class (Show (Literal s), Num (Expression s)) => SMTSolver s where
+import Control.Monad.Trans (MonadIO)
+import GUBS.Expression
+
+data Constrt s = GEQ (Exp s) (Exp s)
+
+class (Show (Literal s), Num (Exp s)) => SMTSolver s where
   data SolverM s :: (* -> *) -> * -> *
   data Literal s :: *
-  data Expression s :: *
-  data Constraint s :: *
+  data Exp s :: *
 
-  constant :: Integer -> Expression s
-  literal :: Literal s -> Expression s
+  constnt :: Integer -> Exp s
+  lit :: Literal s -> Exp s
+  
+  toSolverExp :: Expression (Literal s) -> Exp s
+  toSolverExp (Var v) = lit v
+  toSolverExp (Const i) = constnt i
+  toSolverExp (Mult e1 e2) = toSolverExp e1 * toSolverExp e2
+  toSolverExp (Plus e1 e2) = toSolverExp e1 + toSolverExp e2
+  toSolverExp (Minus e1 e2) = toSolverExp e1 - toSolverExp e2
+  toSolverExp (Neg e) = negate (toSolverExp e)                                              
+  
   fresh :: Monad m => SolverM s m (Literal s)
+
+  push :: Monad m => SolverM s m ()
+  pop  :: Monad m => SolverM s m ()
+
+  assert :: Monad m => Constrt s -> SolverM s m ()
+  checkSat :: MonadIO m => SolverM s m Bool
   getValue :: Monad m => Literal s -> SolverM s m Integer
 
-  -- simplifyExp :: (Monad m, Monad (SolverM s m)) => Expression s -> SolverM s m (Maybe (Expression s))
-  -- simplifyExp _ = return Nothing
-  -- simplifyConstr :: (Monad m, Monad (SolverM s m)) => Constraint s -> SolverM s m (Maybe (Constraint s))
-  -- simplifyConstr _ = return Nothing
-  geq :: Expression s -> Expression s -> Constraint s
-  assert :: Monad m => Constraint s -> SolverM s m ()
-  checkSat :: Monad m => SolverM s m Bool
+type Solver s m = (SMTSolver s, MonadIO m, Monad (SolverM s m))
 
-type Solver s m = (SMTSolver s, Monad m, Monad (SolverM s m))
+geq,leq :: SMTSolver s => Expression (Literal s) -> Expression (Literal s) -> Constrt s
+geq e1 e2 = GEQ (toSolverExp e1) (toSolverExp e2)
+leq = flip geq
+
+stack :: Solver s m => SolverM s m a -> SolverM s m a
+stack m = do { push; a <- m; pop; return a }
+
+evalM :: Solver s m => Expression (Literal s) -> SolverM s m Integer
+evalM = evalWithM getValue 
