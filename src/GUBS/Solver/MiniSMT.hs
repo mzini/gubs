@@ -35,7 +35,8 @@ stringBS :: String -> BS.Builder
 stringBS = BS.string8
 
 integerBS :: Integer -> BS.Builder
-integerBS = BS.integerDec
+integerBS n | n >= 0 = BS.integerDec n
+            | otherwise = app "-" [integerBS (-n)]
 
 charBS :: Char -> BS.Builder
 charBS = BS.char8
@@ -92,7 +93,9 @@ runMiniSMT :: MonadIO m => [Symbol] -> [Constrt MiniSMT] -> m (Maybe Assign)
 runMiniSMT vs cs = 
   liftIO $ withSystemTempFile "smt" $ \file hfile -> do
     hSetBinaryMode hfile True
-    BS.hPutBuilder hfile (toScript vs cs)
+    let script = toScript vs cs
+    -- BS.hPutBuilder stderr script
+    BS.hPutBuilder hfile script
     hFlush hfile
     hClose hfile
     (code, out, err) <- readProcessWithExitCode "minismt" ["-m","-v2",file] ""
