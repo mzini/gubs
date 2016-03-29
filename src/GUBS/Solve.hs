@@ -1,22 +1,23 @@
 module GUBS.Solve (
-  Method (..)
-  , solve
-  , solveWith
+  solveWith
+  , Answer (..)
+  , module S
+  , module P
   ) where
 
 import GUBS.CS
-import GUBS.Solver.Class
-import GUBS.Solve.Incremental (solveIncremental)
-import GUBS.Solve.Simple (solveSimple, ConcreteInterpretation)
+import GUBS.Solve.Strategy hiding (Abort(..))
+import qualified GUBS.Solve.Strategy as S
+import qualified GUBS.Interpretation as I
 
-data Method = Simple | Incremental deriving Show
+import GUBS.Solve.SMT as P
+import GUBS.Solve.SCC as P
 
-solveWith :: (Solver s m, Ord f, Ord v) => Method -> ConcreteInterpretation f -> ConstraintSystem f v -> SolverM s m (Maybe (ConcreteInterpretation f))
-solveWith Simple = solveSimple
-solveWith Incremental = solveIncremental
-
-solve :: (Solver s m, Ord f, Ord v) => ConcreteInterpretation f -> ConstraintSystem f v -> SolverM s m (Maybe (ConcreteInterpretation f))
-solve = solveWith Simple
-
-
+data Answer f v c = DontKnow | Open (ConstraintSystem f v) (Interpretation f c) | Sat (Interpretation f c)
+  
+solveWith :: Monad m => ConstraintSystem f v -> Processor f c v m -> m (Answer f v c)
+solveWith cs p = toAnswer <$> run I.empty (p cs) where
+  toAnswer (Left S.Abort) = DontKnow
+  toAnswer (Right ([],i)) = Sat i
+  toAnswer (Right (cs,i)) = Open cs i
 

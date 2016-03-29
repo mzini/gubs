@@ -39,3 +39,6 @@ fromList = Inter . M.fromList
 
 toList :: Interpretation f c -> [(f, Polynomial Var c)]
 toList (Inter m) = M.toList m
+
+map :: (Polynomial Var c -> Polynomial Var c') -> Interpretation f c -> Interpretation f c'
+map f (Inter m) = Inter (M.map f m)
