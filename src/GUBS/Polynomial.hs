@@ -1,6 +1,7 @@
 module GUBS.Polynomial where
 
 import qualified Data.Map.Strict as M
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import Data.List (foldl')
 
 newtype Monomial v = Mono (M.Map v Int)
@@ -58,7 +59,7 @@ scale c (Poly ms) = Poly (M.map (* c) ms)
 
 mult :: (Num c, Ord v) => Polynomial v c -> Polynomial v c -> Polynomial v c
 mult (Poly ms1) (Poly ms2) = Poly (M.fromListWith (+) ms) where
-  ms = [ (m1 `mmult` m2, c1 * c2) | (m1,c1) <- M.toList ms1, (m2,c2) <- M.toList ms1 ]
+  ms = [ (m1 `mmult` m2, c1 * c2) | (m1,c1) <- M.toList ms1, (m2,c2) <- M.toList ms2 ]
   Mono ps1 `mmult` Mono ps2 = Mono (M.unionWith (+) ps1 ps2)
 
 instance (Num c, Ord v) => Num (Polynomial v c) where
@@ -70,7 +71,8 @@ instance (Num c, Ord v) => Num (Polynomial v c) where
   abs = error "Polynomial: abs undefined"
   signum = error "Polynomial: signum undefined"
 
-
+-- substitution
+   
 type Substitution c v v' = [(v,Polynomial v' c)]
 
 substitute1 :: (Num c, Ord v) => Polynomial v c -> (v,Polynomial v c) -> Polynomial v c
@@ -78,7 +80,8 @@ substitute1 (Poly ms) (v,p) = sum [ scale c (substituteMono m) | (m,c) <- M.toLi
   substituteMono (Mono m) =
     case M.lookup v m of
     Nothing -> fromMono (Mono m)
-    Just i -> sum (fromMono (Mono (M.delete v m)) : replicate i p)
+    Just 1 -> 1 * p
+    Just i -> product (fromMono (Mono (M.delete v m)) : replicate i p)
 
 substitute :: (Num c, Ord v, Ord v') => Polynomial v c -> Substitution c v v' -> Polynomial v' c
 substitute p s = rename fromRight (foldl' substitute1 p' s') where
@@ -88,3 +91,22 @@ substitute p s = rename fromRight (foldl' substitute1 p' s') where
   fromRight (Left _) = error "Polynomial.substitute: not all variables substituted"
 
 
+-- pretty printers
+   
+ppPower :: PP.Pretty a => (a, Int) -> PP.Doc
+ppPower (v,i) = PP.pretty v PP.<> if i == 1 then PP.empty else PP.char '^' PP.<> PP.int i
+
+instance PP.Pretty v => PP.Pretty (Monomial v) where
+  pretty mono = pretty' (toPowers mono) where
+    pretty' [] = PP.char '1'
+    pretty' ps = PP.hcat (PP.punctuate (PP.char '*') [ppPower p | p <- ps])
+
+instance (Eq c, Num c, PP.Pretty c, PP.Pretty v) => PP.Pretty (Polynomial v c) where
+  pretty poly = pretty' [p | p <- toMonos poly, fst p /= 0] where 
+    pretty' [] = PP.char '0'
+    pretty' ps = PP.hcat (PP.punctuate (PP.char '+') (ppMono `map` ps))
+    ppMono (1,mono) = PP.pretty mono
+    ppMono (c,toPowers -> []) = PP.pretty c
+    ppMono (c,mono) = PP.pretty c PP.<> PP.char '*' PP.<> PP.pretty mono
+
+   
