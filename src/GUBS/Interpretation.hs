@@ -2,12 +2,14 @@ module GUBS.Interpretation where
 
 import Data.Maybe (fromMaybe)
 import GUBS.Polynomial
+import GUBS.CS (Term (..))
 import qualified Data.Map.Strict as M
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
-type Var = Int
+newtype Var = V Int deriving (Eq, Ord, Show)
 
 variables :: [Var]
-variables = [0..]
+variables = [V i | i <- [0..]]
 
 newtype Interpretation f c = Inter (M.Map f (Polynomial Var c))
   deriving (Eq, Ord, Show)
@@ -20,7 +22,8 @@ get :: Ord f => Interpretation f c -> f -> Maybe (Polynomial Var c)
 get (Inter m) f = M.lookup f m
 
 get' :: Ord f => Interpretation f c -> f -> Polynomial Var c
-get' inter = fromMaybe (error "GUBS.interpretation: function symbol not found") . get inter
+get' inter = fromMaybe err . get inter where
+   err = error "GUBS.interpretation: function symbol not found"  
 
 insert :: Ord f => Interpretation f c -> f -> Polynomial Var c -> Interpretation f c 
 insert (Inter m) f p = Inter (M.insert f p m)
@@ -40,5 +43,19 @@ fromList = Inter . M.fromList
 toList :: Interpretation f c -> [(f, Polynomial Var c)]
 toList (Inter m) = M.toList m
 
-map :: (Polynomial Var c -> Polynomial Var c') -> Interpretation f c -> Interpretation f c'
-map f (Inter m) = Inter (M.map f m)
+mapInter :: (Polynomial Var c -> Polynomial Var c') -> Interpretation f c -> Interpretation f c'
+mapInter f (Inter m) = Inter (M.map f m)
+
+interpret :: (Ord f, Num c, Ord v) => Interpretation f c -> Term f v -> Maybe (Polynomial v c)
+interpret _ (Var v) = return (variable v)
+interpret _ (Const i) = return (fromIntegral i)
+interpret i (Plus t1 t2) = (+) <$> interpret i t1 <*> interpret i t2
+interpret i (Mult t1 t2) = (*) <$> interpret i t1 <*> interpret i t2
+interpret i (Minus t1 t2) = (-) <$> interpret i t1 <*> interpret i t2
+interpret i (Neg t) = negate <$> interpret i t
+interpret i (Fun f ts) = apply <$> get i f <*> mapM (interpret i) ts
+
+-- pretty printers
+   
+instance PP.Pretty Var where
+  pretty (V i) = PP.text "x" PP.<> PP.int i

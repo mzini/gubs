@@ -7,7 +7,7 @@ module GUBS.Expression
        , evalWith
        ) where
 
-import Data.Functor.Identity (runIdentity)
+import           Data.Functor.Identity        (runIdentity)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 data Expression l =
@@ -34,7 +34,7 @@ instance Show l => PP.Pretty (Expression l) where
   pretty (Plus a b) = ppBin "+" a b
   pretty (Minus a b) = ppBin "-" a b
   pretty (Neg a) = PP.text "-" PP.<+> PP.parens (PP.pretty a)
-  
+
 liftIntOp f _ (Const i) (Const j) = Const (f i j)
 liftIntOp _ c e1 e2 = c e1 e2
 

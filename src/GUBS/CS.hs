@@ -4,6 +4,7 @@ module GUBS.CS (
   , Constraint (..)
   , lhs
   , rhs
+  , definedSymbol
   , ConstraintSystem (..)
   , lhss
   , rhss
@@ -27,6 +28,10 @@ funs = nub . funs' where
   funs' (Fun f ts) = f : concatMap funs ts
   funs' (Mult t1 t2) = funs t1 ++ funs t2
   funs' (Plus t1 t2) = funs t1 ++ funs t2
+
+definedSymbol :: Term f v -> Maybe f
+definedSymbol (Fun f _) = Just f
+definedSymbol _ = Nothing              
 
 
 liftIntOp f _ (Const i) (Const j) = Const (f i j)
@@ -65,6 +70,7 @@ instance Num (Term f v) where
 
 data Constraint f v = Term f v :>=: Term f v
 
+lhs, rhs :: Constraint f v -> Term f v 
 lhs (l :>=: r) = l
 rhs (l :>=: r) = r
 

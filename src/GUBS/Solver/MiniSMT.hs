@@ -15,7 +15,7 @@ import Data.Map.Strict (Map)
 import qualified Control.Monad.State as St
 
 import qualified Data.ByteString.Builder    as BS
-import qualified Data.ByteString.Lazy.Char8 as BS
+
 import           Data.Monoid
 import           System.IO                  (Handle, hClose, hFlush, hSetBinaryMode, stderr, hPutStrLn)
 import           System.IO.Temp             (withSystemTempFile)

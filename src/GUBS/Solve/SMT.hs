@@ -5,7 +5,6 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State (StateT, execStateT, get, put)
 import Control.Monad.Trans (lift)
 
-import qualified Data.Map.Strict as M
 import GUBS.CS
 import GUBS.Expression (Expression, literal)
 import qualified GUBS.Interpretation as I
@@ -38,6 +37,8 @@ interpret _ (Var v) = return (P.variable v)
 interpret _ (Const i) = return (fromIntegral i)
 interpret d (Plus t1 t2) = (+) <$> interpret d t1 <*> interpret d t2
 interpret d (Mult t1 t2) = (*) <$> interpret d t1 <*> interpret d t2
+interpret d (Minus t1 t2) = (-) <$> interpret d t1 <*> interpret d t2
+interpret d (Neg t) = negate <$> interpret d t
 interpret d (Fun f ts) = do I.apply <$> getPoly <*> mapM (interpret d) ts where
     getPoly = do
       ainter <- get
@@ -58,7 +59,7 @@ fromAssignment = traverse evalM
 
 solveM :: (Ord f, Ord v, Solver s m) => Interpretation f Integer -> Int -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter degree cs = do
-  ainter <- flip execStateT (I.map (fmap fromIntegral) inter) $ 
+  ainter <- flip execStateT (I.mapInter (fmap fromIntegral) inter) $ 
     forM_ cs $ \ c -> do
       l <- interpret degree (lhs c)
       r <- interpret degree (rhs c)
@@ -68,11 +69,13 @@ solveM inter degree cs = do
   if sat then Just <$> fromAssignment ainter else return Nothing
 
 smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> Int -> Processor f Integer v m
+smt _ _ [] = return NoProgress
 smt solver degree cs = do
-  getInterpretation >>= run solver >>= maybe abort success
+  getInterpretation >>= run solver >>= maybe fail success
   where
     run Z3 inter = z3 (solveM inter degree cs)
     run MiniSmt inter = miniSMT (solveM inter degree cs)
     
-    success inter = modifyInterpretation (const inter) >> return []
-  
+    fail = return NoProgress
+    success inter = modifyInterpretation (const inter) >> return (Progress [])
+
