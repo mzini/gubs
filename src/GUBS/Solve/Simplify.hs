@@ -1,7 +1,8 @@
 module GUBS.Solve.Simplify where
 
 import           Control.Monad
-import           Data.List (groupBy)
+import           Data.Function (on)
+import           Data.List (groupBy,sortBy)
 import           GUBS.CS
 import           GUBS.Interpretation
 import qualified GUBS.Polynomial as P
@@ -16,37 +17,50 @@ renaming (Var v:ts) (pv:pvs) = do
   return ((v,P.variable pv):s)
 renaming _ _ = Nothing
 
-propagateUp :: (Eq c, Num c, Eq f, Ord f, Ord v, Monad m, PP.Pretty f, PP.Pretty c, PP.Pretty v, Show c, Show v) => Processor f c v m
+funsOfArgs :: [Term f v] -> [f]
+funsOfArgs = foldr funsDL [] . foldr argsDL []
+
+logBinding f s p = 
+    logMsg (PP.text "Propagated:" 
+            PP.<+> PP.pretty f PP.<> PP.parens (PP.cat (PP.punctuate PP.comma [ PP.pretty v | (_,v) <- s]))
+            PP.<+> PP.text "↦" PP.<+> PP.pretty p)
+
+groupWith f = groupBy (\eq1 eq2 -> f eq1 == f eq2) . sortBy (compare `on` f)
+
+propagateUp :: (Eq c, Num c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, PP.Pretty v, Ord v, Monad m) => Processor f c v m
 propagateUp cs = do 
   i <- getInterpretation
-  toProgress cs <$> concat <$> mapM (propagate i) (groupBy (\eq1 eq2 -> ds eq1 == ds eq2) cs) where
-    ds = definedSymbol . lhs
+  toProgress cs <$> concat <$> mapM (propagate i) (groupWith dsym cs) where
+    dsym = definedSymbol . lhs
     toProgress cs cs' = if length cs > length cs' then Progress cs' else NoProgress
-    propagate i [Fun f ts :>=: b] 
+    propagate i [t@ (Fun f ts) :>=: b] 
       | Just s <- renaming ts variables
       , Just p <- interpret i b 
-      , Nothing <- get i f = do 
-          let p' = P.substitute p s
-          logMsg (PP.text "Propagated:" 
-                  PP.<+> PP.pretty f PP.<> PP.parens (PP.cat (PP.punctuate PP.comma [ PP.pretty v | (_,v) <- s]))
-                  PP.<+> PP.text "↦" PP.<+> PP.pretty p')
-          modifyInterpretation (\i' -> insert i' f p')
-          return []                     
+      , Nothing <- get i f
+      , all (`elem` map fst s) (P.variables p)
+      , f `notElem`  funsOfArgs (lhss cs) = do
+           let p' = P.substitute p s
+           logBinding f s p'                      
+           modifyInterpretation (\i' -> insert i' f p')
+           return []                     
     propagate _ g = return g
 
-
-propagateDown :: (Num c, Eq f, Ord f, Ord v, Monad m) => Processor f c v m
+propagateDown :: (Eq c, Num c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, Ord v, Monad m, Show v, PP.Pretty v) => Processor f c v m -- TODO pretty
 propagateDown cs = do 
   i <- getInterpretation
-  toProgress cs <$> concat <$> mapM (propagate i) (groupBy (\eq1 eq2 -> ds eq1 == ds eq2) cs) where
+  toProgress cs <$> concat <$> mapM (propagate i) (groupWith dsym cs) where
    toProgress cs cs' = if length cs > length cs' then Progress cs' else NoProgress
-   ds = definedSymbol . rhs
+   dsym = definedSymbol . rhs
    propagate i [ h :>=: Fun f ts] 
      | Just s <- renaming ts variables
      , Just p <- interpret i h
-     , Nothing <- get i f = do 
-         modifyInterpretation (\i' -> insert i' f (P.substitute p s))
-         return []                     
+     , Nothing <- get i f       
+     , all (`elem` map fst s) (P.variables p)
+     , f `notElem`  funsOfArgs (rhss cs) = do 
+           let p' = P.substitute p s
+           logBinding f s p'                      
+           modifyInterpretation (\i' -> insert i' f p')
+           return []                            
    propagate _ g = return g
 
 

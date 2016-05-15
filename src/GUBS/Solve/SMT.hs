@@ -11,7 +11,7 @@ import qualified GUBS.Interpretation as I
 import qualified GUBS.Polynomial as P
 import GUBS.Solve.Strategy
 import GUBS.Solver hiding (SMTSolver)
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+
 
 data SMTSolver = MiniSmt | Z3 deriving (Show)
 
@@ -43,6 +43,7 @@ interpret d (Fun f ts) = do I.apply <$> getPoly <*> mapM (interpret d) ts where
     getPoly = do
       ainter <- get
       maybe (addPoly ainter) return (I.get ainter f)
+      -- return (tracePretty "p:" p)
     addPoly ainter = do
       p <- lift (freshPoly freshVar (max 1 d) (length ts))
       put (I.insert ainter f p)
@@ -63,6 +64,8 @@ solveM inter degree cs = do
     forM_ cs $ \ c -> do
       l <- interpret degree (lhs c)
       r <- interpret degree (rhs c)
+      -- let l' = tracePretty "l:" l
+      -- let r' = tracePretty "r:" r
       forM_ (P.coefficients (l - r)) $ \ d -> 
         lift (assert (d `geq` 0) )
   sat <- checkSat

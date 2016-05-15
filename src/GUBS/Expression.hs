@@ -8,6 +8,7 @@ module GUBS.Expression
        ) where
 
 import           Data.Functor.Identity        (runIdentity)
+import           GUBS.Utils
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 data Expression l =
@@ -24,16 +25,13 @@ literal = Var
 constant :: Integer -> Expression l
 constant = Const
 
-ppBin :: PP.Pretty e => String -> e -> e -> PP.Doc
-ppBin op e1 e2 = PP.parens (PP.pretty e1) PP.<+> PP.text op PP.<+> PP.parens (PP.pretty e2)
-
 instance Show l => PP.Pretty (Expression l) where
-  pretty (Var v) = PP.text (show v)
+  pretty (Var v) = ppCall "var" [PP.text (show v)]
   pretty (Const i) = PP.text (show i)
-  pretty (Mult a b) = ppBin "*" a b
-  pretty (Plus a b) = ppBin "+" a b
-  pretty (Minus a b) = ppBin "-" a b
-  pretty (Neg a) = PP.text "-" PP.<+> PP.parens (PP.pretty a)
+  pretty (Mult a b) = ppCall "*" [a,b]
+  pretty (Plus a b) = ppCall "+" [a,b]
+  pretty (Minus a b) = ppCall "-" [a,b]
+  pretty (Neg a) = ppCall "neg" [a]
 
 liftIntOp f _ (Const i) (Const j) = Const (f i j)
 liftIntOp _ c e1 e2 = c e1 e2
@@ -49,7 +47,7 @@ minus x y = liftIntOp (-) Minus x y
 
 mult :: Expression l -> Expression l -> Expression l
 mult (Const 0) _ = Const 0
-mult x (Const 0) = Const 0
+mult _ (Const 0) = Const 0
 mult (Const 1) y = y
 mult x (Const 1) = x
 mult x y = liftIntOp (*) Mult x y

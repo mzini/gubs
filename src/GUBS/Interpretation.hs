@@ -1,7 +1,8 @@
 module GUBS.Interpretation where
 
 import Data.Maybe (fromMaybe)
-import GUBS.Polynomial
+import GUBS.Polynomial hiding (variables)
+import qualified GUBS.Polynomial as P
 import GUBS.CS (Term (..))
 import qualified Data.Map.Strict as M
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
@@ -46,16 +47,22 @@ toList (Inter m) = M.toList m
 mapInter :: (Polynomial Var c -> Polynomial Var c') -> Interpretation f c -> Interpretation f c'
 mapInter f (Inter m) = Inter (M.map f m)
 
-interpret :: (Ord f, Num c, Ord v) => Interpretation f c -> Term f v -> Maybe (Polynomial v c)
+interpret :: (Ord f, Num c, Ord v) => Interpretation f c -> Term f v -> Maybe (Polynomial v c) 
 interpret _ (Var v) = return (variable v)
 interpret _ (Const i) = return (fromIntegral i)
 interpret i (Plus t1 t2) = (+) <$> interpret i t1 <*> interpret i t2
 interpret i (Mult t1 t2) = (*) <$> interpret i t1 <*> interpret i t2
 interpret i (Minus t1 t2) = (-) <$> interpret i t1 <*> interpret i t2
 interpret i (Neg t) = negate <$> interpret i t
-interpret i (Fun f ts) = apply <$> get i f <*> mapM (interpret i) ts
+interpret i t@(Fun f ts) = apply <$> get i f <*> mapM (interpret i) ts
 
 -- pretty printers
    
 instance PP.Pretty Var where
   pretty (V i) = PP.text "x" PP.<> PP.int i
+
+instance (PP.Pretty f, PP.Pretty c, Eq c, Num c) => PP.Pretty (Interpretation f c) where
+  pretty inter = PP.vcat [ pp b | b <- toList inter ] where
+    pp (f,p) = (PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- P.variables p]))
+                PP.<+> PP.text "=" PP.<+> PP.pretty p)          
+
