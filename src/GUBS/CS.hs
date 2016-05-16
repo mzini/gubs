@@ -62,8 +62,6 @@ funsDL (Plus t1 t2) = funsDL t1 . funsDL t2
 funsDL (Minus t1 t2) = funsDL t1 . funsDL t2        
 funsDL (Neg t) = funsDL t
 
-
-
 funs :: Eq f => Term f v -> [f]
 funs = nub . flip funsDL []
 
@@ -106,21 +104,27 @@ instance Num (Term f v) where
   signum = error "Term: signum undefined"
 
 
-data Constraint f v = Term f v :>=: Term f v
+data Constraint f v =
+  Term f v :>=: Term f v
+  | Term f v :=: Term f v
 
-lhs, rhs :: Constraint f v -> Term f v 
+lhs, rhs :: Constraint f v -> Term f v
+lhs (l :=: r) = l
 lhs (l :>=: r) = l
 rhs (l :>=: r) = r
+rhs (l :=: r) = r
+
+cfuns :: Eq f => Constraint f c -> [f]
+cfuns c = nub (funsDL (lhs c) (funsDL (rhs c) []))
 
 type ConstraintSystem f v = [Constraint f v]
 
+--TODO check if that makes sense
 sccs :: Eq f => ConstraintSystem f v -> [[Constraint f v]]
 sccs cs = map flattenSCC sccs' where
   sccs' = stronglyConnComp [ (c, i , succs c ) | (i,c) <- ecs ]
   ecs = zip [0..] cs
-  succs c = [ j | (j,c') <- ecs
-                , any (`elem` (funs (rhs c))) (funs (lhs c'))
-                  || any (`elem` (funs (lhs c))) (funs (lhs c')) ]
+  succs c = [ j | (j,c') <- ecs, any (`elem` cfuns c) (cfuns c')]
 
 lhss,rhss :: ConstraintSystem f v -> [Term f v]
 lhss = map lhs
@@ -140,7 +144,8 @@ instance (PP.Pretty f, PP.Pretty v) => PP.Pretty (Term f v) where
    pretty (Neg t) = ppCall "neg" [t]
 
 instance (PP.Pretty f, PP.Pretty v) => PP.Pretty (Constraint f v) where
-  pretty (l :>=: r) = PP.pretty l PP.<+> PP.text "≥" PP.<+> PP.pretty r
+  pretty (l :>=: r) = ppCall ">=" [PP.pretty l, PP.pretty r] -- PP.pretty l PP.<+> PP.text "≥" PP.<+> PP.pretty r
+  pretty (l :=: r)  = ppCall "=" [PP.pretty l, PP.pretty r]
 
 instance {-# OVERLAPPING #-} (PP.Pretty f, PP.Pretty v) => PP.Pretty (ConstraintSystem f v) where
   pretty = PP.vcat . map PP.pretty
@@ -186,7 +191,10 @@ term = try constant <|> parens (try var <|> compound) where
   toTerm f _ = parserFail $ "Unexpected number of arguments for operation '" ++ show f ++ "'"
   
 constraint :: Parser (Constraint Symbol Variable)
-constraint = parens (literal ">=" >> (:>=:) <$> lexeme term <*> lexeme term)
+constraint = parens $ do
+  c <- try (literal ">=" >> return (:>=:))
+       <|> (literal "=" >> return (:=:))
+  c <$> lexeme term <*> lexeme term
 
 constraintSystem :: Parser (ConstraintSystem Symbol Variable)
 constraintSystem = many (lexeme constraint)

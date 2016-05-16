@@ -2,8 +2,8 @@ flags: {}
 packages:
 - '.'
 - location:
-  git: 'git@github.com:mzini/monad-trace'
-  commit: b75ce1b391cbdd14917feeee95166d55bef5c823
+    git: git@github.com:mzini/monad-trace
+    commit: b75ce1b391cbdd14917feeee95166d55bef5c823
 extra-deps:
 - smtlib2-0.3
 - atto-lisp-0.2.2.2

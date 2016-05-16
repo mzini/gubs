@@ -22,10 +22,11 @@ module GUBS.Solve.Strategy (
 
 import           Data.Maybe (isNothing,fromMaybe)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
-
 import           Control.Monad.State
 import           Control.Monad.Trace
 import           Data.Tree (Forest)
+
+import           GUBS.Utils
 import qualified GUBS.Polynomial as Poly
 import           GUBS.Interpretation hiding (get)
 import           GUBS.CS
@@ -47,14 +48,6 @@ getInterpretation = get
 modifyInterpretation :: Monad m => (Interpretation f c -> Interpretation f c) -> ProcT f c m ()
 modifyInterpretation = modify
 
-renderPretty :: PP.Pretty e => e -> String
-renderPretty d = PP.displayS (PP.renderSmart 1.0 200 (PP.pretty d)) ""
-                             
-logMsg :: MonadTrace String m => PP.Pretty e => e -> m ()
-logMsg = trace . renderPretty
-
-logBlk :: MonadTrace String m => PP.Pretty e => e -> m a -> m a
-logBlk = scopeTrace . renderPretty
 
 logInterpretation :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ProcT f c m () --TODO use pretty printer?
 logInterpretation = void $ logBlk "Interpretation" $ 
@@ -65,23 +58,25 @@ logInterpretation = void $ logBlk "Interpretation" $
  
 logConstraints :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logConstraints  cs = 
-  void $ logBlk "Constraints" $ do 
+  logBlk "Constraints" $ do
     i <- getInterpretation
-    mapM (logConstraint i) cs where
-  logConstraint i (l :>=: r) = 
-    logMsg (ppIEQ l r PP.<> PP.text":" PP.<+> ppC i l r)
-  ppC i l r = fromMaybe (PP.text "interpretation open") $ do 
-    il <- interpret i l
-    ir <- interpret i r
-    return (ppIEQ il ir)
-  ppIEQ l r = PP.pretty l PP.<+> PP.text "≥" PP.<+> PP.pretty r
+    mapM_ (logConstraint i) cs
+    where
+      logConstraint i (l :>=: r) = logConstraint' ">=" i l r
+      logConstraint i (l :=: r) = logConstraint' "=" i l r
+      logConstraint' eq i l r =
+        logMsg $ fromMaybe (PP.text "interpretation open") $ do 
+          il <- interpret i l
+          ir <- interpret i r
+          return (PP.pretty l PP.<+> PP.text eq PP.<+> PP.pretty r PP.<> PP.text":"
+                  PP.<+> PP.pretty il PP.<+> PP.text eq PP.<+> PP.pretty ir)
 
 logOpenConstraints :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logOpenConstraints  cs = 
-  void $ logBlk "Open Constraints" $ do 
+  logBlk "Open Constraints" $ do 
     i <- getInterpretation
-    mapM logMsg (filter (nonInterpreted i) cs) where
-  nonInterpreted i (l :>=: r) = isNothing (interpret i l) || isNothing (interpret i r)
+    mapM_ logMsg (filter (nonInterpreted i) cs) where
+  nonInterpreted i c = isNothing (interpret i (lhs c)) || isNothing (interpret i (rhs c))
 
 data Result f v = Progress (ConstraintSystem f v)
                 | NoProgress

@@ -16,7 +16,6 @@ data Expression l =
   | Const Integer
   | Mult (Expression l) (Expression l)
   | Plus (Expression l) (Expression l)
-  | Minus (Expression l) (Expression l)
   | Neg (Expression l)
 
 literal :: l -> Expression l
@@ -30,7 +29,6 @@ instance Show l => PP.Pretty (Expression l) where
   pretty (Const i) = PP.text (show i)
   pretty (Mult a b) = ppCall "*" [a,b]
   pretty (Plus a b) = ppCall "+" [a,b]
-  pretty (Minus a b) = ppCall "-" [a,b]
   pretty (Neg a) = ppCall "neg" [a]
 
 liftIntOp f _ (Const i) (Const j) = Const (f i j)
@@ -39,11 +37,11 @@ liftIntOp _ c e1 e2 = c e1 e2
 plus :: Expression l -> Expression l -> Expression l
 plus (Const 0) y = y
 plus x (Const 0) = x
+plus (Const x) (Const y) = Const (x + y)
 plus x y = liftIntOp (+) Plus x y
 
 minus :: Expression l -> Expression l -> Expression l
-minus x (Const 0) = x
-minus x y = liftIntOp (-) Minus x y
+minus x y = plus x (neg y)
 
 mult :: Expression l -> Expression l -> Expression l
 mult (Const 0) _ = Const 0
@@ -72,23 +70,7 @@ evalWithM getValue = eval where
  eval (Const i) = return i
  eval (Mult e1 e2) = (*) <$> eval e1 <*> eval e2
  eval (Plus e1 e2) = (+) <$> eval e1 <*> eval e2
- eval (Minus e1 e2) = (-) <$> eval e1 <*> eval e2
  eval (Neg e1) = negate <$> eval e1
 
 evalWith :: (l -> Integer) -> Expression l -> Integer
 evalWith getValue = runIdentity . evalWithM (return . getValue)
-
-
--- eval :: S.Solver s m => Expression l -> S.SolverM s m Integer
--- eval (Var v) = S.getValue v
--- eval (Const i) = return i
--- eval (Mult e1 e2) = (*) <$> eval e1 <*> eval e2
--- eval (Plus e1 e2) = (+) <$> eval e1 <*> eval e2
--- eval (Minus e1 e2) = (-) <$> eval e1 <*> eval e2
--- eval (Neg e1) = negate <$> eval e1
-
--- freshLiteral :: S.Solver s m => S.SolverM s m (Expression l)
--- freshLiteral = Var <$> S.fresh
-
--- assert :: S.Solver s m => ConstraintExp l -> S.SolverM s m ()
--- assert (GEQ e1 e2) = S.assert (toSolverExp e1 `S.geq` toSolverExp e2)

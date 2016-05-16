@@ -43,7 +43,10 @@ instance SMTSolver SMTLibSolver where
   getValue (Lit e) = lift (SMT.getValue e)
   push = lift SMT.push
   pop = lift SMT.pop
-  assert (GEQ (Exp l) (Exp r)) = lift (SMT.assert (l SMT..>=. r))
+  assert (GEQC (Exp l) (Exp r)) = lift (SMT.assert (l SMT..>=. r))
+  assert (EQC (Exp l) (Exp r)) = lift $ do
+    SMT.assert (l SMT..<=. r)
+    SMT.assert  (l SMT..>=. r)
   checkSat = lift SMT.checkSat
 
 z3 :: MonadIO m => SolverM SMTLibSolver m a -> m a

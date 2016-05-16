@@ -12,6 +12,7 @@ processor = try simplify ==> try (minismt 0) ==> try (minismt 1) ==> try (minism
   where
     simplify = exhaustive (propagateUp <=> propagateDown)
     minismt = smt MiniSmt
+    -- z3 = smt Z3
 
 main :: IO ()
 main = do

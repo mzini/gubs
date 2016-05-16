@@ -27,6 +27,7 @@ logBinding f s p =
 
 groupWith f = groupBy (\eq1 eq2 -> f eq1 == f eq2) . sortBy (compare `on` f)
 
+-- TODO: equalities; not working ATM
 propagateUp :: (Eq c, Num c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, PP.Pretty v, Ord v, Monad m) => Processor f c v m
 propagateUp cs = do 
   i <- getInterpretation
@@ -45,7 +46,8 @@ propagateUp cs = do
            return []                     
     propagate _ g = return g
 
-propagateDown :: (Eq c, Num c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, Ord v, Monad m, Show v, PP.Pretty v) => Processor f c v m -- TODO pretty
+-- TODO: equalities
+propagateDown :: (Eq c, Num c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, Ord v, Monad m, Show v, PP.Pretty v) => Processor f c v m
 propagateDown cs = do 
   i <- getInterpretation
   toProgress cs <$> concat <$> mapM (propagate i) (groupWith dsym cs) where

@@ -4,6 +4,7 @@ import Control.Monad (forM_, liftM, when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State (StateT, execStateT, get, put)
 import Control.Monad.Trans (lift)
+import Control.Monad.Trace
 
 import GUBS.CS
 import GUBS.Expression (Expression, literal)
@@ -58,18 +59,18 @@ interpret d (Fun f ts) = do I.apply <$> getPoly <*> mapM (interpret d) ts where
 fromAssignment :: (Solver s m) => AbstractInterpretation s f -> SolverM s m (Interpretation f Integer)
 fromAssignment = traverse evalM
 
-solveM :: (Ord f, Ord v, Solver s m) => Interpretation f Integer -> Int -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
+solveM :: (Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> Int -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter degree cs = do
   ainter <- flip execStateT (I.mapInter (fmap fromIntegral) inter) $ 
     forM_ cs $ \ c -> do
       l <- interpret degree (lhs c)
       r <- interpret degree (rhs c)
-      -- let l' = tracePretty "l:" l
-      -- let r' = tracePretty "r:" r
-      forM_ (P.coefficients (l - r)) $ \ d -> 
-        lift (assert (d `geq` 0) )
+      (lift . assert . constraint c) `mapM` P.coefficients (l - r)
   sat <- checkSat
   if sat then Just <$> fromAssignment ainter else return Nothing
+  where 
+    constraint (_ :>=: _) d = d `geq` 0
+    constraint (_ :=: _) d = d `eq` 0
 
 smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> Int -> Processor f Integer v m
 smt _ _ [] = return NoProgress
