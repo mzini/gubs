@@ -8,11 +8,11 @@ import System.Exit (exitSuccess, exitFailure)
 import Data.Tree (drawTree, Tree (..))
 
 processor :: Processor Symbol Integer Variable IO
-processor = try simplify ==> try (minismt 0) ==> try (minismt 1) ==> try (minismt 2)
+processor = try simplify ==> try (z3 0) ==> try (z3 1) ==> try (z3 2)
   where
     simplify = exhaustive (propagateUp <=> propagateDown)
-    minismt = smt MiniSmt
-    -- z3 = smt Z3
+    -- minismt = smt MiniSmt
+    z3 = smt Z3
 
 main :: IO ()
 main = do
