@@ -25,6 +25,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad (join)
 import           Data.Char (digitToInt)
 import           Data.List (nub,foldl')
+import           Data.String
 import           Data.Graph
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import           Text.Parsec
@@ -40,6 +41,8 @@ data Term f v =
   | Minus (Term f v) (Term f v)
   | Neg (Term f v)
   deriving (Show)
+
+instance IsString (Term f String) where fromString = Var
 
 argsDL :: Term f v -> [Term f v] -> [Term f v]
 argsDL Var {} = id
@@ -107,6 +110,10 @@ instance Num (Term f v) where
 data Constraint f v =
   Term f v :>=: Term f v
   | Term f v :=: Term f v
+    deriving (Show)
+
+infixl 1 :>=:
+infixl 1 :=:
 
 lhs, rhs :: Constraint f v -> Term f v
 lhs (l :=: r) = l

@@ -27,8 +27,7 @@ main = do
       putLog l
       exitSuccess
   where
-    putResult (Sat i) = putDocLn (text "SUCCESS" <$$> pretty i)
-    putResult (Open cs i) = putDocLn (text "OPEN" <$$> pretty cs <$$> pretty i)
+    putResult = putDocLn
     putLog l = putDocErrLn (text "" <$$> text (drawTree (Node "ExecutionLog" l)))
 
       
