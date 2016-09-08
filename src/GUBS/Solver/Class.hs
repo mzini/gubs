@@ -14,8 +14,8 @@ import Control.Monad.Trace
 import GUBS.Expression
 
 data Constrt s =
-  GEQC { clhs :: Exp s, crhs :: Exp s}
-  | EQC { clhs :: Exp s, crhs :: Exp s}
+  GEQC { clhs :: Exp s, crhs :: Exp s }
+  | EQC { clhs :: Exp s, crhs :: Exp s }
 
 class (Show (Literal s), Num (Exp s)) => SMTSolver s where
   data SolverM s :: (* -> *) -> * -> *
@@ -53,7 +53,7 @@ eq (Plus e1 (Neg e2)) e3 = EQC (toSolverExp e1) (toSolverExp (e3 + e2))
 eq e1 e2 = EQC (toSolverExp e1) (toSolverExp e2)
        
 stack :: Solver s m => SolverM s m a -> SolverM s m a
-stack m = do { push; a <- m; pop; return a }
+stack m = push *> m <* pop
 
 evalM :: Solver s m => Expression (Literal s) -> SolverM s m Integer
-evalM = evalWithM getValue 
+evalM = evalWithM getValue

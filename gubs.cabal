@@ -23,7 +23,7 @@ library
                    GUBS.Solver.Class
                    GUBS.Solver.SMTLib
                    GUBS.Solver.MiniSMT
-                   GUBS.Utils                   
+                   GUBS.Utils
                    GUBS
   other-extensions:    
   build-depends:       base >= 4.8 && <4.9,

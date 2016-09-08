@@ -3,8 +3,11 @@ module GUBS.CS (
   Term (..)
   , funs
   , funsDL
+  , vars
+  , varsDL
   , args
   , argsDL
+  , substitute
     -- * Constraints
   , Constraint (..)
   , lhs
@@ -19,10 +22,12 @@ module GUBS.CS (
   , Symbol (..)
   , Variable (..)
   , csFromFile
+  , csToFile
   ) where
 
 import           Control.Monad.IO.Class
 import           Control.Monad (join)
+import           System.IO 
 import           Data.Char (digitToInt)
 import           Data.List (nub,foldl')
 import           Data.String
@@ -32,21 +37,20 @@ import           Text.Parsec
 import           Text.ParserCombinators.Parsec (CharParser)
 import           GUBS.Utils
 
-data Term f v =
-  Var v
-  | Const Integer
-  | Fun f [Term f v]
-  | Mult (Term f v) (Term f v)
-  | Plus (Term f v) (Term f v)
-  | Minus (Term f v) (Term f v)
-  | Neg (Term f v)
-  deriving (Show)
+data Term f v = Var v
+              | Const Integer
+              | Fun f [Term f v]
+              | Mult (Term f v) (Term f v)
+              | Plus (Term f v) (Term f v)
+              | Minus (Term f v) (Term f v)
+              | Neg (Term f v)
+    deriving (Show)
 
 instance IsString (Term f String) where fromString = Var
 
 argsDL :: Term f v -> [Term f v] -> [Term f v]
-argsDL Var {} = id
-argsDL Const {} = id            
+argsDL Var{} = id
+argsDL Const{} = id            
 argsDL (Fun f ts) = (++) ts . foldr ((.) . argsDL) id ts
 argsDL (Mult t1 t2) = argsDL t1 . argsDL t2 
 argsDL (Plus t1 t2) = argsDL t1 . argsDL t2 
@@ -55,7 +59,20 @@ argsDL (Neg t) = argsDL t
                        
 args :: Term f v -> [Term f v]       
 args = flip argsDL []
-       
+
+varsDL :: Term f v -> [v] -> [v]
+varsDL (Var v) = (v:)
+varsDL Const {} = id            
+varsDL (Fun f ts) = foldr ((.) . varsDL) id ts
+varsDL (Mult t1 t2) = varsDL t1 . varsDL t2 
+varsDL (Plus t1 t2) = varsDL t1 . varsDL t2 
+varsDL (Minus t1 t2) = varsDL t1 . varsDL t2        
+varsDL (Neg t) = varsDL t
+
+
+vars :: Term f v -> [v]
+vars = flip varsDL []
+        
 funsDL :: Term f v -> [f] -> [f]
 funsDL Var {} = id
 funsDL Const {} = id            
@@ -97,6 +114,19 @@ neg (Neg i) = i
 neg (Const j) = Const (-j)
 neg e = Neg e
 
+substitute :: Eq v => [(v,Term f v)] -> Term f v -> Term f v
+substitute subst (Var v) =
+  case lookup v subst of
+    Nothing -> Var v
+    Just t -> t
+substitute _ t@Const{} = t
+substitute subst (Fun f ts) = Fun f (substitute subst `map` ts)
+substitute subst (Mult t1 t2) = substitute subst t1 * substitute subst t2
+substitute subst (Plus t1 t2) = substitute subst t1 + substitute subst t2
+substitute subst (Minus t1 t2) = substitute subst t1 - substitute subst t2
+substitute subst (Neg t) = neg (substitute subst t)
+
+
 instance Num (Term f v) where
   fromInteger = Const
   (+) = plus
@@ -107,10 +137,9 @@ instance Num (Term f v) where
   signum = error "Term: signum undefined"
 
 
-data Constraint f v =
-  Term f v :>=: Term f v
-  | Term f v :=: Term f v
-    deriving (Show)
+data Constraint f v = Term f v :=: Term f v
+                    | Term f v :>=: Term f v
+  deriving (Show)
 
 infixl 1 :>=:
 infixl 1 :=:
@@ -128,10 +157,14 @@ type ConstraintSystem f v = [Constraint f v]
 
 --TODO check if that makes sense
 sccs :: Eq f => ConstraintSystem f v -> [[Constraint f v]]
-sccs cs = map flattenSCC sccs' where
-  sccs' = stronglyConnComp [ (c, i , succs c ) | (i,c) <- ecs ]
-  ecs = zip [0..] cs
-  succs c = [ j | (j,c') <- ecs, any (`elem` cfuns c) (cfuns c')]
+sccs cs = map flattenSCC sccs'
+  where
+    sccs' = stronglyConnComp [ (c, i, succs c)
+                             | (i, c) <- ecs ]
+    ecs = zip [0 ..] cs
+    succs c = [ j
+              | (j, c') <- ecs
+              , any (`elem` cfuns c) (cfuns c') ]
 
 lhss,rhss :: ConstraintSystem f v -> [Term f v]
 lhss = map lhs
@@ -141,21 +174,45 @@ rhss = map rhs
 -- pretty printing
 ----------------------------------------------------------------------
 
+ppBin :: (PP.Pretty a, PP.Pretty b) => (PP.Doc -> PP.Doc) -> String -> a -> b -> PP.Doc
+ppBin par f a b = par (PP.pretty a PP.</> PP.text f PP.<+> PP.pretty b)
+
 instance (PP.Pretty f, PP.Pretty v) => PP.Pretty (Term f v) where
-   pretty (Var v) = ppCall "var" [PP.pretty v]
-   pretty (Const i) = PP.integer i
-   pretty (Fun f ts) = ppSexp (PP.pretty f : [PP.pretty ti | ti <- ts])
-   pretty (Mult t1 t2) = ppCall "*" [t1,t2]
-   pretty (Plus t1 t2) = ppCall "+" [t1,t2]
-   pretty (Minus t1 t2) = ppCall "-" [t1,t2]
-   pretty (Neg t) = ppCall "neg" [t]
+  pretty = pp id where
+    pp _ (Var v) = PP.pretty v
+    pp _ (Const i) = PP.integer i
+    pp _ (Fun f ts) = PP.pretty f PP.<> PP.tupled [PP.pretty ti | ti <- ts]
+    pp par (Mult t1 t2) = ppBin par "*" t1 t2
+    pp par (Plus t1 t2) = ppBin par "+" t1 t2
+    pp par (Minus t1 t2) = ppBin par "-" t1 t2 
+    pp par (Neg t) = par (PP.text "neg" PP.<> PP.tupled [PP.pretty t])
 
 instance (PP.Pretty f, PP.Pretty v) => PP.Pretty (Constraint f v) where
-  pretty (l :>=: r) = ppCall ">=" [PP.pretty l, PP.pretty r] -- PP.pretty l PP.<+> PP.text "≥" PP.<+> PP.pretty r
-  pretty (l :=: r)  = ppCall "=" [PP.pretty l, PP.pretty r]
+  pretty (l :>=: r) = PP.pretty l PP.</> PP.text "≥" PP.<+> PP.pretty r
+  pretty (l :=: r)  = PP.pretty l PP.</> PP.text "=" PP.<+> PP.pretty r
 
 instance {-# OVERLAPPING #-} (PP.Pretty f, PP.Pretty v) => PP.Pretty (ConstraintSystem f v) where
   pretty = PP.vcat . map PP.pretty
+
+class PrettySexp a where
+  prettySexp :: a -> PP.Doc
+
+instance (PP.Pretty f, PP.Pretty v) => PrettySexp (Term f v) where 
+  prettySexp (Var v) = ppCall "var" [PP.pretty v]
+  prettySexp (Const i) = PP.integer i
+  prettySexp (Fun f []) = ppSexp [PP.pretty f, ppSexp []]
+  prettySexp (Fun f ts) = ppSexp (PP.pretty f : [prettySexp ti | ti <- ts])
+  prettySexp (Mult t1 t2) = ppCall "*" [t1,t2]
+  prettySexp (Plus t1 t2) = ppCall "+" [t1,t2]
+  prettySexp (Minus t1 t2) = ppCall "-" [t1,t2]
+  prettySexp (Neg t) = ppCall "neg" [t]
+
+instance (PP.Pretty f, PP.Pretty v) => PrettySexp (Constraint f v) where
+  prettySexp (l :>=: r) = ppCall "≥" [prettySexp l, prettySexp r]
+  prettySexp (l :=: r)  = PP.pretty l PP.</> PP.text "=" PP.<+> PP.pretty r
+
+instance (PP.Pretty f, PP.Pretty v) => PrettySexp (ConstraintSystem f v) where
+  prettySexp = PP.vcat . map PP.pretty
 -- parsing
 ----------------------------------------------------------------------
 
@@ -210,3 +267,9 @@ csFromFile :: MonadIO m => FilePath -> m (Either ParseError (ConstraintSystem Sy
 csFromFile file = runParser parse () sn <$> liftIO (readFile file) where
   sn = "<file " ++ file ++ ">"
   parse = many (whiteSpace1) *> constraintSystem <* eof
+
+csToFile :: (MonadIO m, PP.Pretty f, PP.Pretty v) => ConstraintSystem f v -> FilePath -> m ()
+csToFile cs f = liftIO $ do
+   handle <- openFile f WriteMode
+   PP.hPutDoc handle (prettySexp cs)
+   hClose handle

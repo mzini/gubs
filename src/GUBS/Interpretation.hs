@@ -56,13 +56,25 @@ interpret i (Minus t1 t2) = (-) <$> interpret i t1 <*> interpret i t2
 interpret i (Neg t) = negate <$> interpret i t
 interpret i t@(Fun f ts) = apply <$> get i f <*> mapM (interpret i) ts
 
+pInterpret :: (Ord f, Num c, Ord v, Integral c) => Interpretation f c -> Term f v -> Term f v
+pInterpret _ (Var v) = Var v
+pInterpret _ (Const i) = Const i
+pInterpret i (Plus t1 t2) = pInterpret i t1 + pInterpret i t2
+pInterpret i (Mult t1 t2) = pInterpret i t1 * pInterpret i t2
+pInterpret i (Minus t1 t2) = pInterpret i t1 - pInterpret i t2
+pInterpret i (Neg t) = negate (pInterpret i t)
+pInterpret i t@(Fun f ts) =
+  case apply <$> get i f <*> mapM (interpret i) ts of
+    Nothing -> Fun f (pInterpret i `map` ts)
+    Just p -> polyToTerm p
+
+
 -- pretty printers
-   
 instance PP.Pretty Var where
   pretty (V i) = PP.text "x" PP.<> PP.int i
 
 instance (PP.Pretty f, PP.Pretty c, Eq c, Num c) => PP.Pretty (Interpretation f c) where
   pretty inter = PP.vcat [ pp b | b <- toList inter ] where
-    pp (f,p) = (PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- P.variables p]))
-                PP.<+> PP.text "=" PP.<+> PP.pretty p)          
+    pp (f,p) = PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- P.variables p]))
+                PP.<+> PP.text "=" PP.<+> PP.pretty p
 

@@ -54,29 +54,31 @@ logInterpretation = void $ logBlk "Interpretation" $
     fmap toList getInterpretation >>= mapM logBinding where
   logBinding (f,p) = 
     logMsg (PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- Poly.variables p]))
-            PP.<+> PP.text "=" PP.<+> PP.pretty p)          
- 
-logConstraints :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
-logConstraints  cs = 
-  logBlk "Constraints" $ do
+            PP.<+> PP.text "=" PP.<+> PP.pretty p)
+    
+logConstraints' :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logConstraints'  cs = do
     i <- getInterpretation
     mapM_ (logConstraint i) cs
     where
       logConstraint i (l :>=: r) = logConstraint' ">=" i l r
       logConstraint i (l :=: r) = logConstraint' "=" i l r
-      logConstraint' eq i l r =
-        logMsg $ fromMaybe (PP.text "interpretation open") $ do 
-          il <- interpret i l
-          ir <- interpret i r
-          return (PP.pretty l PP.<+> PP.text eq PP.<+> PP.pretty r PP.<> PP.text":"
-                  PP.<+> PP.pretty il PP.<+> PP.text eq PP.<+> PP.pretty ir)
+      logConstraint' eq i l r = logMsg $
+        PP.pretty l PP.<+> PP.hang 2 (PP.text "=" PP.<+> pp i l
+                                      PP.</> PP.text eq PP.<+> pp i r
+                                      PP.</> PP.text "=" PP.<+> PP.pretty r)
+      pp i t = maybe (PP.pretty (pInterpret i t)) PP.pretty (interpret i t)
 
-logOpenConstraints :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logConstraints :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logConstraints cs = logBlk "Constraints" $ logConstraints' cs
+
+logOpenConstraints :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logOpenConstraints  cs = 
   logBlk "Open Constraints" $ do 
     i <- getInterpretation
-    mapM_ logMsg (filter (nonInterpreted i) cs) where
-  nonInterpreted i c = isNothing (interpret i (lhs c)) || isNothing (interpret i (rhs c))
+    let nonInterpreted c = isNothing (interpret i (lhs c)) || isNothing (interpret i (rhs c))
+    logConstraints' (filter nonInterpreted cs)
+
 
 data Result f v = Progress (ConstraintSystem f v)
                 | NoProgress

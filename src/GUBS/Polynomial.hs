@@ -3,6 +3,7 @@ module GUBS.Polynomial where
 import           Data.List (foldl',sort, nub)
 import qualified Data.Map.Strict as M
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import GUBS.CS
 
 newtype Monomial v = Mono (M.Map v Int)
   deriving (Eq, Ord, Show)
@@ -79,6 +80,9 @@ instance (Num c, Ord v) => Num (Polynomial v c) where
    
 type Substitution c v v' = [(v,Polynomial v' c)]
 
+sdomain :: Substitution c v v' -> [v]
+sdomain = map fst
+
 substitute1 :: (Num c, Ord v) => Polynomial v c -> (v,Polynomial v c) -> Polynomial v c
 substitute1 (Poly ms) (v,p) = sum [ scale c (substituteMono m) | (m,c) <- M.toList ms] where
   substituteMono (Mono m) =
@@ -93,7 +97,10 @@ substitute p s = rename fromRight (foldl' substitute1 p' s') where
   fromRight (Right b) = b
   fromRight (Left v) = error $ "Polynomial.substitute: not all variables substituted" 
 
-
+polyToTerm :: Integral c => Polynomial v c -> Term f v
+polyToTerm p = sum [Const (toInteger c) * monoToTerm m | (c,m) <- toMonos p] where
+  monoToTerm m = product [ product (replicate p (Var v)) | (v,p) <- toPowers m]
+  
 -- pretty printers
    
 ppPower :: PP.Pretty a => (a, Int) -> PP.Doc

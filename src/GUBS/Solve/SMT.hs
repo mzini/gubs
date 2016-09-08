@@ -1,6 +1,7 @@
-module GUBS.Solve.SMT ( smt, SMTSolver (..) ) where
+module GUBS.Solve.SMT ( smt, SMTSolver (..), PolyShape (..), SMTOpts (..), defaultSMTOpts ) where
 
-import Control.Monad (forM_, liftM, when)
+import Data.List (subsequences)
+import Control.Monad (forM_, liftM, when, unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State (StateT, execStateT, get, put)
 import Control.Monad.Trans (lift)
@@ -19,52 +20,76 @@ data SMTSolver = MiniSmt | Z3 deriving (Show)
 type AbstractPolynomial s v = P.Polynomial v (Expression (Literal s))
 type AbstractInterpretation s f = I.Interpretation f (Expression (Literal s))
 
-freshPoly :: (Solver s m) => SolverM s m (Expression (Literal s)) -> Int -> Int -> SolverM s m (AbstractPolynomial s I.Var)
-freshPoly freshVar dim ar =
-  P.fromMonos <$> sequence [ (,) <$> freshVar <*> return (P.fromPowers mono)
-                           | mono <- concat (template dim) ]
-  where 
-    template 0 = [[[]]]
-    template d = [ v `mult` mono | mono <- lead, v <- take ar I.variables ] : ps
-      where
-        ps@(lead:_) = template (d - 1)
-        v `mult` [] = [(v,1)]
-        v `mult` ((v',i) : mono)
-          | v == v' = (v',i+1) : mono
-          | otherwise = (v',i) : v `mult` mono
+data PolyShape = Mixed | MultMixed
+  deriving (Eq, Show)
 
-interpret :: (Solver s m, Ord f, Ord v) => Int -> Term f v -> StateT (AbstractInterpretation s f) (SolverM s m) (AbstractPolynomial s v)
+data SMTOpts =
+  SMTOpts { shape    :: PolyShape
+          , degree   :: Int 
+          , maxCoeff :: Maybe Int
+          , maxConst :: Maybe Int}
+
+defaultSMTOpts :: SMTOpts
+defaultSMTOpts = SMTOpts { shape = MultMixed
+                         , degree = 2
+                         , maxCoeff = Nothing
+                         , maxConst = Nothing }
+
+freshPoly :: (Solver s m) => SMTOpts -> Int -> SolverM s m (AbstractPolynomial s I.Var)
+freshPoly opts ar =
+  P.fromMonos <$> sequence [ (,) <$> freshCoeff mono <*> return (P.fromPowers mono)
+                           | mono <- fromShape (shape opts)]
+  where
+    vars = take ar I.variables
+    -- fromShape StronglyLinear = [] : [ [(v,1)] | v <- vars ]
+    -- fromShape Linear = [] : [ [(v,1)] | v <- vars ]
+    fromShape MultMixed = [ [ (v,1) | v <- ms] | ms <- subsequences vars, length ms <= degree opts ]
+    fromShape Mixed     = concat (template (degree opts)) where 
+      template 0 = [[[]]]
+      template d = [ v `mult` mono | mono <- lead, v <- vars ] : ps
+        where
+          ps@(lead:_) = template (d - 1)
+          v `mult` [] = [(v,1)]
+          v `mult` ((v',i) : mono)
+            | v == v' = (v',i+1) : mono
+            | otherwise = (v',i) : v `mult` mono
+            
+    freshCoeff mono = do
+      v <- literal <$> fresh
+      assert (v `geq` 0)
+      let maxC = if null mono then maxConst opts else maxCoeff opts
+      maybe (return ()) (\ ub -> assert (fromIntegral ub `geq` v)) maxC
+        -- unless (null mono) (assert (v `geq` 0)) -- TODO: problems with Z3
+        -- when (shape opts == StronglyLinear && null mono) (assert (1 `geq` v))
+      return v
+
+interpret :: (Solver s m, Ord f, Ord v) => SMTOpts -> Term f v -> StateT (AbstractInterpretation s f) (SolverM s m) (AbstractPolynomial s v)
 interpret _ (Var v) = return (P.variable v)
 interpret _ (Const i) = return (fromIntegral i)
-interpret d (Plus t1 t2) = (+) <$> interpret d t1 <*> interpret d t2
-interpret d (Mult t1 t2) = (*) <$> interpret d t1 <*> interpret d t2
-interpret d (Minus t1 t2) = (-) <$> interpret d t1 <*> interpret d t2
-interpret d (Neg t) = negate <$> interpret d t
-interpret d (Fun f ts) = do I.apply <$> getPoly <*> mapM (interpret d) ts where
+interpret opts (Plus t1 t2) = (+) <$> interpret opts t1 <*> interpret opts t2
+interpret opts (Mult t1 t2) = (*) <$> interpret opts t1 <*> interpret opts t2
+interpret opts (Minus t1 t2) = (-) <$> interpret opts t1 <*> interpret opts t2
+interpret opts (Neg t) = negate <$> interpret opts t
+interpret opts (Fun f ts) = do I.apply <$> getPoly <*> mapM (interpret opts) ts where
     getPoly = do
       ainter <- get
       maybe (addPoly ainter) return (I.get ainter f)
       -- return (tracePretty "p:" p)
     addPoly ainter = do
-      p <- lift (freshPoly freshVar (max 1 d) (length ts))
+      p <- lift (freshPoly opts (length ts))
       put (I.insert ainter f p)
       return p
-    freshVar = do
-      v <- literal <$> fresh
-      assert (v `geq` 0)
-      when (d <= 0) (assert (1 `geq` v))
-      return v
 
 
 fromAssignment :: (Solver s m) => AbstractInterpretation s f -> SolverM s m (Interpretation f Integer)
 fromAssignment = traverse evalM
 
-solveM :: (Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> Int -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
-solveM inter degree cs = do
+solveM :: (Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
+solveM inter opts cs = do
   ainter <- flip execStateT (I.mapInter (fmap fromIntegral) inter) $ 
     forM_ cs $ \ c -> do
-      l <- interpret degree (lhs c)
-      r <- interpret degree (rhs c)
+      l <- interpret opts (lhs c)
+      r <- interpret opts (rhs c)
       (lift . assert . constraint c) `mapM` P.coefficients (l - r)
   sat <- checkSat
   if sat then Just <$> fromAssignment ainter else return Nothing
@@ -72,13 +97,14 @@ solveM inter degree cs = do
     constraint (_ :>=: _) d = d `geq` 0
     constraint (_ :=: _) d = d `eq` 0
 
-smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> Int -> Processor f Integer v m
+
+smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress
-smt solver degree cs = do
+smt solver opts cs = do
   getInterpretation >>= run solver >>= maybe fail success
   where
-    run Z3 inter = z3 (solveM inter degree cs)
-    run MiniSmt inter = miniSMT (solveM inter degree cs)
+    run Z3 inter = z3 (solveM inter opts cs)
+    run MiniSmt inter = miniSMT (solveM inter opts cs)
     
     fail = return NoProgress
     success inter = modifyInterpretation (const inter) >> return (Progress [])
