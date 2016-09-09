@@ -86,7 +86,6 @@ interpret opts (Fun f ts) = do I.apply <$> getPoly <*> mapM (interpret opts) ts 
 fromAssignment :: (Solver s m) => AbstractInterpretation s f -> SolverM s m (Interpretation f Integer)
 fromAssignment = traverse evalM
 
--- TODO
 solveM :: (Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter opts cs = do
   ainter <- flip execStateT (I.mapInter (fmap fromIntegral) inter) $ 
@@ -103,14 +102,13 @@ solveM inter opts cs = do
     factor = snd . P.factorise
 
 
--- TODO
-smt :: (Ord f, Ord v, Show v, PP.Pretty v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
+smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress
 smt solver opts cs = do
   getInterpretation >>= run solver >>= maybe fail success
   where
     -- TODO
-    -- run Z3 inter = z3 (solveM inter opts cs)
+    run Z3 inter = z3 (solveM inter opts cs)
     run MiniSmt inter = miniSMT (solveM inter opts cs)
     
     fail = return NoProgress
