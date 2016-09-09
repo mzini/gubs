@@ -1,76 +1,91 @@
 module GUBS.Expression
        (
-         Expression (..)
-       , literal
+         Expression
+       , variable
        , constant
        , evalWithM
        , evalWith
+       , toNum
        ) where
 
-import           Data.Functor.Identity        (runIdentity)
 import           GUBS.Utils
+import           GUBS.Polynomial
+-- import qualified Data.MultiSet as MS
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
-data Expression l =
-  Var l
-  | Const Integer
-  | Mult (Expression l) (Expression l)
-  | Plus (Expression l) (Expression l)
-  | Neg (Expression l)
+-- newtype Mono v = Mono (MultiSet v, Integer)
+--   deriving (Eq, Ord, Show)
 
-literal :: l -> Expression l
-literal = Var
+-- newtype Poly v = Poly [Mono v] deriving (Show)
 
-constant :: Integer -> Expression l
-constant = Const
+type Expression v = Polynomial v Integer
+-- pattern ZERO = Mono (Const 0)
+-- pattern ONE  = Mono (Const 1)
+-- pattern CONST c = Mono (Const c)
 
-instance Show l => PP.Pretty (Expression l) where
-  pretty (Var v) = ppCall "var" [PP.text (show v)]
-  pretty (Const i) = PP.text (show i)
-  pretty (Mult a b) = ppCall "*" [a,b]
-  pretty (Plus a b) = ppCall "+" [a,b]
-  pretty (Neg a) = ppCall "neg" [a]
+-- mcoeff :: Mono v -> Integer
+-- mcoeff (Mono (_,i)) = i
 
-liftIntOp f _ (Const i) (Const j) = Const (f i j)
-liftIntOp _ c e1 e2 = c e1 e2
+-- mvars :: Mono v -> MultiSet v
+-- mvars (Mono (vs,_)) = vs
 
-plus :: Expression l -> Expression l -> Expression l
-plus (Const 0) y = y
-plus x (Const 0) = x
-plus (Const x) (Const y) = Const (x + y)
-plus x y = liftIntOp (+) Plus x y
+-- variable :: v -> Expression v
+-- variable v = Poly [(MS.singleton v, 1)]
 
-minus :: Expression l -> Expression l -> Expression l
-minus x y = plus x (neg y)
+-- constant :: Integer -> Expression v
+-- constant i = Poly [(MS.empty , i)]
 
-mult :: Expression l -> Expression l -> Expression l
-mult (Const 0) _ = Const 0
-mult _ (Const 0) = Const 0
-mult (Const 1) y = y
-mult x (Const 1) = x
-mult x y = liftIntOp (*) Mult x y
+-- mapMono :: (Integer -> Integer) -> (v -> v') -> Mono v -> Mono v'
+-- mapMono f g (Mono (ms,i)) = Mono (MS.map g ms, f i)
 
-neg :: Expression l -> Expression l
-neg (Neg i) = i
-neg (Const j) = Const (-j)
-neg e = Neg e
+-- mapPoly :: (v -> v') -> (Expression v -> Expression v')
+-- mapPoly f = Mono (f m)
+-- mapPoly f (Add m e) = Add (f m) (mapExp f e)
 
-instance Num (Expression l) where
-  fromInteger = Const
-  (+) = plus
-  (-) = minus
-  (*) = mult
-  negate = neg
-  abs = error "Expression: abs undefined"
-  signum = error "Expression: signum undefined"
+-- monos :: Expression v -> [Monomial v]
+-- monos (Mono m) = [m]
+-- monos (Add m e) = m : monos e
 
-evalWithM :: Monad m => (l -> m Integer) -> Expression l -> m Integer
-evalWithM getValue = eval where
- eval (Var v) = getValue v
- eval (Const i) = return i
- eval (Mult e1 e2) = (*) <$> eval e1 <*> eval e2
- eval (Plus e1 e2) = (+) <$> eval e1 <*> eval e2
- eval (Neg e1) = negate <$> eval e1
+-- negMono :: Monomial v -> Monomial v
+-- negMono (Const c) = Const (-c)
+-- negMono (Mult v m) = Mult v (negMono m)
 
-evalWith :: (l -> Integer) -> Expression l -> Integer
-evalWith getValue = runIdentity . evalWithM (return . getValue)
+-- neg :: Expression v -> Expression v
+-- neg (Poly ms) = Poly [ mapMono negate id  | m <- ms]
+
+-- plus :: Expression v -> Expression v -> Expression v
+-- plus (Poly ms1) (Poly ms2) = Poly (map ins1 ms2) where
+--   ins1 m1 [] = m1
+--   ins1 m1 (m2:ms')
+--     | mvars m1 == mvars m2 = Mono (m1,mcoeff m1 + mcoeff m2) : ms'
+--     | otherwise = m2 : ins1 m1 ms'
+
+-- minus :: Expression v -> Expression v -> Expression v
+-- minus e1 e2 = plus e1 (neg e2)
+
+-- mult :: Expression v -> Expression v -> Expression v
+-- mult (Poly ms1) (Poly ms2) 
+-- mult e1 (Mono m) = mapExp (multM m) e1 where
+--   multM (Const c) m2 = mapMono (* c) id m2
+--   multM (Mult v m1) m2 = Mult v (multM m1 m2)
+
+
+-- instance Num (Expression v) where
+--   fromInteger c = CONST c
+--   (+) = plus
+--   (-) = minus
+--   (*) = mult
+--   negate = neg
+--   abs = error "Expression: abs undefined"
+--   signum = error "Expression: signum undefined"
+
+
+-- pretty printers
+
+-- instance Show v => PP.Pretty (Monomial v) where
+--   pretty (Const i) = PP.text (show i)
+--   pretty (Mult v m) = ppCall "*" [ppCall "var" [PP.text (show v)], PP.pretty m]
+  
+-- instance Show v => PP.Pretty (Expression v) where
+--   pretty (Mono m) = PP.pretty m
+--   pretty (Add m e) = ppCall "+" [PP.pretty m, PP.pretty e]

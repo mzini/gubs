@@ -36,6 +36,7 @@ library
                        process        >=1.2 && <1.3,
                        temporary      >=1.2 && <1.3,
                        ansi-wl-pprint >= 0.6 && < 0.7,
+                       multiset       >= 0.3 && < 0.4,
                        parsec >= 3.1 && < 3.2                                              
   hs-source-dirs:      src
   default-language:    Haskell2010
@@ -50,6 +51,7 @@ library
                        MultiParamTypeClasses,
                        RecordWildCards,
                        ViewPatterns,
+                       PatternSynonyms,
                        PatternGuards,
                        TypeFamilies
                          

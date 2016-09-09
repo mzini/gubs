@@ -49,7 +49,7 @@ modifyInterpretation :: Monad m => (Interpretation f c -> Interpretation f c) ->
 modifyInterpretation = modify
 
 
-logInterpretation :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ProcT f c m () --TODO use pretty printer?
+logInterpretation :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ProcT f c m ()
 logInterpretation = void $ logBlk "Interpretation" $ 
     fmap toList getInterpretation >>= mapM logBinding where
   logBinding (f,p) = 

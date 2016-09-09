@@ -46,7 +46,6 @@ propagateEq cs = do
            return (Right ())
   propagate _ c = return (Left c)
     
--- TODO: equalities; not working ATM
 propagateUp :: (Eq c, Num c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, PP.Pretty v, Ord v, Monad m) => Processor f c v m
 propagateUp cs = do 
   i <- getInterpretation
@@ -65,7 +64,6 @@ propagateUp cs = do
            return []                     
     propagate _ g = return g
 
--- TODO: equalities
 propagateDown :: (Eq c, Num c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, Ord v, Monad m, Show v, PP.Pretty v) => Processor f c v m
 propagateDown cs = do 
   i <- getInterpretation

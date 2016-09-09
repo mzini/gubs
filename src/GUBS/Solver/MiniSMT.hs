@@ -24,6 +24,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           GUBS.Utils
 import           GUBS.Expression
+import qualified GUBS.Polynomial as Poly
 import           GUBS.Solver.Class
 
 
@@ -108,18 +109,25 @@ toScript vs cs =
   app "set-logic" [stringBS "QF_NIA"]
   </> vsep [ app "declare-fun" [stringBS (show (Lit v)), sexpr [], stringBS "Nat"]
            | v <- vs]
-  </> vsep [ app "assert" [ app (eqSym c) [expToBS (clhs c), expToBS (crhs c)] ]
+  </> vsep [ app "assert" [ app (eqSym c) [expressionToBS (clhs c), expressionToBS (crhs c)] ]
            | c <- cs]
   </> app "check-sat" []
   where
     eqSym GEQC {} = ">="
     eqSym EQC {} = "="
-    expToBS (Exp e) = expressionToBS e
-    expressionToBS (Var l) = stringBS (show l)
-    expressionToBS (Const i) = integerBS i
-    expressionToBS (Mult e1 e2) = app "*" [expressionToBS e1, expressionToBS e2]
-    expressionToBS (Plus e1 e2) = app "+" [expressionToBS e1, expressionToBS e2]
-    expressionToBS (Neg e) = app "-" [expressionToBS e]        
+    expressionToBS (Exp e) = polyToBS e where
+      add [] = integerBS 0
+      add [a] = a
+      add as = app "+" as
+      mul 0 _ = integerBS 0
+      mul c [] = integerBS c
+      mul 1 [a] = a
+      mul (-1) [a] = app "-" [a]
+      mul 1 as = app "*" as
+      mul c as = app "*" (integerBS c : as)
+      
+      polyToBS (Poly.toMonos -> ms) = add [ monoToBS c m | (c,m) <- ms ]
+      monoToBS c (Poly.toPowers -> ps) = mul c (concat [ replicate e (stringBS (show v)) | (v,e) <- ps ])
     
 
 -- result parser
@@ -159,7 +167,7 @@ instance SMTSolver MiniSMT where
   data Literal MiniSMT = Lit Symbol
   data Exp MiniSMT = Exp (Expression (Literal MiniSMT))
 
-  lit = Exp . literal
+  lit = Exp . variable
   constnt = Exp . constant
   
   fresh = do
@@ -201,12 +209,16 @@ instance Monad m => St.MonadState SolverState (SolverM MiniSMT m) where
 instance Show (Literal MiniSMT) where
   show (Lit (Symbol i)) = "v" ++ show i
 
+instance PP.Pretty (Literal MiniSMT) where
+  pretty (Lit (Symbol i)) = PP.text "v" PP.<> PP.int i
+
 instance Read (Literal MiniSMT) where
   readPrec = get >>= readLit where
     readLit 'v' = Lit <$> Symbol <$> readPrec
     readLit  _  = pfail
 
-deriving instance Show (Expression (Literal MiniSMT))
+deriving instance Eq (Literal MiniSMT)
+deriving instance Ord (Literal MiniSMT)
 
 liftUn f (Exp e) = Exp (f e)
 liftBin f (Exp e1) (Exp e2) = Exp (f e1 e2)

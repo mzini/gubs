@@ -35,7 +35,7 @@ union (Inter m1) (Inter m2) = Inter (m1 `M.union` m2)
 empty :: Interpretation f c
 empty = Inter M.empty
 
-apply :: (Num c, Ord v) => Polynomial Var c -> [Polynomial v c] -> Polynomial v c
+apply :: (Eq c, Num c, Ord v) => Polynomial Var c -> [Polynomial v c] -> Polynomial v c
 apply p args = substitute p (zip variables args) 
 
 fromList :: Ord f => [(f, Polynomial Var c)] -> Interpretation f c
@@ -47,7 +47,7 @@ toList (Inter m) = M.toList m
 mapInter :: (Polynomial Var c -> Polynomial Var c') -> Interpretation f c -> Interpretation f c'
 mapInter f (Inter m) = Inter (M.map f m)
 
-interpret :: (Ord f, Num c, Ord v) => Interpretation f c -> Term f v -> Maybe (Polynomial v c) 
+interpret :: (Ord f, Eq c, Num c, Ord v) => Interpretation f c -> Term f v -> Maybe (Polynomial v c) 
 interpret _ (Var v) = return (variable v)
 interpret _ (Const i) = return (fromIntegral i)
 interpret i (Plus t1 t2) = (+) <$> interpret i t1 <*> interpret i t2
