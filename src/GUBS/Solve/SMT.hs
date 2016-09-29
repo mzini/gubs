@@ -59,11 +59,10 @@ freshPoly opts ar =
             
     freshCoeff mono = do
       v <- variable <$> fresh
-      assert (v `geq` 0)
+      assertGeq v 0
       let maxC = if null mono then maxConst opts else maxCoeff opts
-      maybe (return ()) (\ ub -> assert (fromIntegral ub `geq` v)) maxC
+      maybe (return ()) (\ ub -> assertGeq (fromIntegral ub) v) maxC
         -- unless (null mono) (assert (v `geq` 0)) -- TODO: problems with Z3
-        -- when (shape opts == StronglyLinear && null mono) (assert (1 `geq` v))
       return v
 
 interpret :: (Solver s m, Ord f, Ord v) => SMTOpts -> Term f v -> StateT (AbstractInterpretation s f) (SolverM s m) (AbstractPolynomial s v)
@@ -93,14 +92,12 @@ solveM inter opts cs = do
       l <- interpret opts (lhs c)
       r <- interpret opts (rhs c)
       -- TODO
-      (lift . assert . constraint c) `mapM` P.coefficients (l - r) 
+      (lift . constraint c) `mapM` P.coefficients (l - r) 
   sat <- checkSat
   if sat then Just <$> fromAssignment ainter else return Nothing
-  where 
-    constraint (_ :>=: _) d = factor d `geq` 0
-    constraint (_ :=: _) d = factor d `eq` 0
-    factor = snd . P.factorise
-
+  where
+    constraint (_ :>=: _) d = d `assertGeq` 0
+    constraint (_ :=: _) d = d `assertEq` 0
 
 smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress

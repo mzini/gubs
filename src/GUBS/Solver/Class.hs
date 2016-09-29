@@ -4,15 +4,18 @@ module GUBS.Solver.Class (
   , stack
   , evalM
   , Constrt (..)
-  , geq
-  , leq
-  , eq
+  , Disj
+  , assertGeq
+  , assertLeq
+  , assertEq
   ) where
 
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Trace
 import GUBS.Expression
 import qualified GUBS.Polynomial as Poly
+
+type Disj a = [a]
 
 data Constrt s =
   GEQC { clhs :: Exp s, crhs :: Exp s }
@@ -34,7 +37,7 @@ class (Show (Literal s), Ord (Literal s), Num (Exp s)) => SMTSolver s where
   push :: Monad m => SolverM s m ()
   pop  :: Monad m => SolverM s m ()
 
-  assert :: Monad m => Constrt s -> SolverM s m ()
+  assert :: (Monad m) => Disj (Constrt s) -> SolverM s m () --TODO monadio
   checkSat :: (MonadIO m, MonadTrace String m) => SolverM s m Bool
   getValue :: Monad m => Literal s -> SolverM s m Integer
 
@@ -42,19 +45,19 @@ type Solver s m = (SMTSolver s, MonadIO m, Monad (SolverM s m))
 
 -- TODO
 
-compzero :: (Ord v) => Expression v -> Expression v -> Expression v
-compzero e1 e2 = e1 - e2
-
-geq,leq,eq :: (SMTSolver s) => Expression (Literal s) -> Expression (Literal s) -> Constrt s
-geq e1 e2 = GEQC (toSolverExp (compzero e1 e2)) 0
--- geq (Plus e1 c1@Const{}) c2@Const{} = GEQC (toSolverExp e1) (toSolverExp (c2 - c1))
--- geq (Plus e1 (Neg e2)) e3 = GEQC (toSolverExp e1) (toSolverExp (e3 + e2))
--- geq e1 e2 = GEQC (toSolverExp e1) (toSolverExp e2)
-leq = flip geq
-eq e1 e2 = EQC (toSolverExp (compzero e1 e2)) 0
--- eq (Plus e1 c1@Const{}) c2@Const{} = EQC (toSolverExp e1) (toSolverExp (c2 - c1))
--- eq (Plus e1 (Neg e2)) e3 = EQC (toSolverExp e1) (toSolverExp (e3 + e2))
--- eq e1 e2 = EQC (toSolverExp e1) (toSolverExp e2)
+assertGeq,assertLeq,assertEq :: (Solver s m) => Expression (Literal s) -> Expression (Literal s) -> SolverM s m ()
+assertGeq e1 e2 = assert [GEQC (toSolverExp e1) (toSolverExp e2)]
+  -- case Poly.factorise (e1 - e2) of
+  --   Nothing -> assert [GEQC (toSolverExp e1) (toSolverExp e2)]
+  --   (Just ((m,_),p)) -> do
+  --     mapM (\ v -> assert [GEQC (lit v) (fromInteger 0)]) (Poly.monoVariables m)
+  --     assert (GEQC (toSolverExp p) (fromInteger 0)
+  --                               : [ EQC (lit v) (fromInteger 0) | v <- Poly.monoVariables m])
+assertLeq = flip assertGeq
+assertEq e1 e2 = assert [EQC (toSolverExp e1) (toSolverExp e2)]
+-- assertEq e1 e2 = assert (EQC (toSolverExp p) (fromInteger 0)
+--                           : [ EQC (lit v) (fromInteger 0) | v <- Poly.monoVariables m])
+--   where ((m,_),p) = Poly.factorise (e1 - e2) 
        
 stack :: Solver s m => SolverM s m a -> SolverM s m a
 stack m = push *> m <* pop

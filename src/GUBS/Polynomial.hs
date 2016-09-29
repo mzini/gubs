@@ -37,7 +37,10 @@ toMonos (Poly m) = [ (c,m) | (m,c) <- M.toList m ]
 
 coefficients :: Polynomial v c -> [c]
 coefficients (Poly ms) = M.elems ms
-                                 
+
+monoVariables :: (Num c, Eq v, Ord v) => Monomial v -> [v]
+monoVariables (Mono m) = S.toAscList (MS.toSet m)
+
 variables :: (Num c, Eq v, Ord v) => Polynomial v c -> [v]
 variables p = S.toAscList (S.unions [ MS.toSet m | (_,Mono m) <- toMonos p ])
 
@@ -69,12 +72,13 @@ scale c (Poly ms)
   | c == fromIntegral 0 = (constant 0)
   | otherwise = Poly (M.map (* c) ms)
 
-factorise :: (Ord v, Integral c) => Polynomial v c -> ((Monomial v, c), Polynomial v c)
+factorise :: (Ord v, Integral c) => Polynomial v c -> Maybe ((Monomial v, c), Polynomial v c)
 factorise p
-  | null ms = ((fromPowers [], fromIntegral 1), constant 0)
-  | otherwise = ((Mono mf,cf),fromMonos [ (c `idiv` cf, Mono (m MS.\\ mf))  | (c, Mono m) <- ms])
+  | length ms <= 1  = Nothing
+  | MS.size mf == 0 = Nothing
+  | otherwise       = Just ( (Mono mf,1)
+                           , fromMonos [ (c, Mono (m MS.\\ mf))  | (c, Mono m) <- ms])
   where
-    a `idiv` b = ceiling (fromIntegral a / fromIntegral b)
     ms = toMonos p
     mf = foldl1' MS.intersection [ m | (_,Mono m) <- ms ]
     cf = foldl1' gcd [ c | (c,_) <- ms]

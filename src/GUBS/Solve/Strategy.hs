@@ -107,9 +107,11 @@ p1 <=> p2 = \cs -> do
 (==>) :: Monad m => Processor f c v m -> Processor f c v m -> Processor f c v m
 p1 ==> p2 = \cs -> do 
   r <- p1 cs
-  case r of 
+  case r of
+    Progress [] -> return (Progress [])
     Progress cs' -> p2 cs'
     NoProgress -> return NoProgress
+
   
 exhaustive :: Monad m => Processor f c v m -> Processor f c v m
 exhaustive p = p ==> try (exhaustive p)

@@ -39,7 +39,7 @@ lookup s a = fromMaybe 0 (Map.lookup s a)
 
           
 data Frame = Frame { fFreeVars :: Set Symbol
-                   , fConstraints :: [Constrt MiniSMT]}
+                   , fConstraints :: [Disj (Constrt MiniSMT)]}
 
 data SolverState = SolverState { freshId    :: Int
                                , assign     :: Maybe Assign
@@ -49,7 +49,7 @@ data SolverState = SolverState { freshId    :: Int
 freeVars :: SolverState -> [Symbol]
 freeVars = Set.toList . fFreeVars . curFrame
 
-constraints :: SolverState -> [Constrt MiniSMT]
+constraints :: SolverState -> [Disj (Constrt MiniSMT)]
 constraints st = concatMap fConstraints (curFrame st : frameStack st)
 
 pushFrame :: SolverState -> SolverState
@@ -63,7 +63,7 @@ popFrame st =
     [] -> error "MiniSMT: pop on empty stack"
     f:fs -> st { curFrame = f, frameStack = fs }
 
-addConstraint :: Constrt MiniSMT -> SolverState -> SolverState
+addConstraint :: Disj (Constrt MiniSMT) -> SolverState -> SolverState
 addConstraint c st@SolverState{..} =
   st { curFrame = curFrame { fConstraints = c : fConstraints curFrame }
      , assign = Nothing } -- TODO: maybe check satisfiability of c and keep
@@ -104,17 +104,22 @@ sexpr es = charBS '(' <> hsep es <> charBS ')'
 app :: String -> [BS.Builder] -> BS.Builder
 app f es = sexpr (stringBS f : es)
   
-toScript :: [Symbol] -> [Constrt MiniSMT] -> BS.Builder
+toScript :: [Symbol] -> [Disj (Constrt MiniSMT)] -> BS.Builder
 toScript vs cs =
   app "set-logic" [stringBS "QF_NIA"]
   </> vsep [ app "declare-fun" [stringBS (show (Lit v)), sexpr [], stringBS "Nat"]
            | v <- vs]
-  </> vsep [ app "assert" [ app (eqSym c) [expressionToBS (clhs c), expressionToBS (crhs c)] ]
-           | c <- cs]
+  </> vsep [ app "assert" [disjToBS d] | d <- cs]
   </> app "check-sat" []
   where
-    eqSym GEQC {} = ">="
-    eqSym EQC {} = "="
+    disjToBS [] = stringBS "false"
+    disjToBS [e] = constrToBS e
+    disjToBS es = app "or" [ constrToBS e | e <- es ]
+    constrToBS c =
+      app (eqSym c) [expressionToBS (clhs c), expressionToBS (crhs c) ] where
+        eqSym GEQC {} = ">="
+        eqSym EQC {} = "="
+
     expressionToBS (Exp e) = polyToBS e where
       add [] = integerBS 0
       add [a] = a
@@ -144,7 +149,7 @@ parseOut out =
 
 -- minismt wrapper
 ----------------------------------------------------------------------
-runMiniSMT :: (MonadTrace String m, MonadIO m) => [Symbol] -> [Constrt MiniSMT] -> m (Maybe Assign)
+runMiniSMT :: (MonadTrace String m, MonadIO m) => [Symbol] -> [Disj (Constrt MiniSMT)] -> m (Maybe Assign)
 runMiniSMT vs cs = do
   let script = toScript vs cs
   logBlk "MiniSMT" (logMsg (ppScript script))
@@ -158,7 +163,7 @@ runMiniSMT vs cs = do
       ExitFailure _ -> hPutStrLn stderr err >> return Nothing
       ExitSuccess   -> return (parseOut out)
       where
-        ppScript = PP.hcat . map PP.text . lines . unpack . BS.toLazyByteString
+        ppScript = PP.vcat . map PP.text . map ("   " ++) . lines . unpack . BS.toLazyByteString
 -- SMTSolver instance
 ----------------------------------------------------------------------
 

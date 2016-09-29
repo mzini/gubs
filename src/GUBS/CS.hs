@@ -162,9 +162,11 @@ sccs cs = map flattenSCC sccs'
     sccs' = stronglyConnComp [ (c, i, succs c)
                              | (i, c) <- ecs ]
     ecs = zip [0 ..] cs
-    succs c = [ j
-              | (j, c') <- ecs
-              , any (`elem` cfuns c) (cfuns c') ]
+    succs c@(l :=: r) = succs (l :>=: r) ++ succs (r :>=: l)
+    succs c@(l :>=: r) = [ j
+                         | (j, c') <- ecs
+                         , any (`elem` (cfuns c)) (funs (lhs c')) ] --TODO account for equality constraints
+                         -- any (`elem` cfuns c') (cfuns c)
 
 lhss,rhss :: ConstraintSystem f v -> [Term f v]
 lhss = map lhs

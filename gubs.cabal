@@ -28,7 +28,7 @@ library
   other-extensions:    
   build-depends:       base >= 4.8 && <4.9,
                        containers >=0.5 && <0.6,
-                       smtlib2 >=0.3 && < 0.4,
+                       smtlib2 >=0.3 && <0.4,
                        mtl >=2.2 && <2.3,
                        monad-trace >=0.1 && <0.2,
                        transformers >=0.4 && <0.5,
