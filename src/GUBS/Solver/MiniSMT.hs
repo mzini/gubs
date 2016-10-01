@@ -3,10 +3,10 @@ module GUBS.Solver.MiniSMT (
   ) where
 
 import           Prelude hiding (lookup)
-import           Text.Read hiding (Symbol)
+import           Text.Read hiding (Symbol,lift)
 
 import qualified Control.Monad.State as St
-import           Control.Monad.Trans (MonadIO, liftIO)
+import           Control.Monad.Trans (MonadIO, liftIO, MonadTrans(..))
 import           Control.Monad.Trace
 import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Lazy.Char8 (unpack)
@@ -167,6 +167,9 @@ runMiniSMT vs cs = do
 -- SMTSolver instance
 ----------------------------------------------------------------------
 
+instance MonadTrans (SolverM MiniSMT) where
+  lift m = S (lift m)
+    
 instance SMTSolver MiniSMT where
   data SolverM MiniSMT m a = S (St.StateT SolverState m a) deriving (Functor)
   data Literal MiniSMT = Lit Symbol

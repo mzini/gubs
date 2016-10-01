@@ -1,9 +1,10 @@
 module GUBS.Solve.SMT ( smt, SMTSolver (..), PolyShape (..), SMTOpts (..), defaultSMTOpts ) where
 
-import Data.List (subsequences)
-import Control.Monad (forM_, liftM, when, unless)
+import Data.List (subsequences,nub)
+import Control.Arrow (second)
+import Control.Monad (forM, forM_, liftM, when, unless, filterM, (>=>))
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State (StateT, execStateT, get, put)
+import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trace
 
@@ -30,13 +31,15 @@ data SMTOpts =
   SMTOpts { shape    :: PolyShape
           , degree   :: Int 
           , maxCoeff :: Maybe Int
-          , maxConst :: Maybe Int}
+          , maxConst :: Maybe Int
+          , minimize :: Bool }
 
 defaultSMTOpts :: SMTOpts
 defaultSMTOpts = SMTOpts { shape = MultMixed
                          , degree = 2
                          , maxCoeff = Nothing
-                         , maxConst = Nothing }
+                         , maxConst = Nothing
+                         , minimize = True}
 
 freshPoly :: (Solver s m) => SMTOpts -> Int -> SolverM s m (AbstractPolynomial s I.Var)
 freshPoly opts ar =
@@ -87,24 +90,61 @@ fromAssignment = traverse evalM
 
 solveM :: (Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter opts cs = do
-  ainter <- flip execStateT (I.mapInter (fmap fromIntegral) inter) $ 
-    forM_ cs $ \ c -> do
-      l <- interpret opts (lhs c)
-      r <- interpret opts (rhs c)
-      -- TODO
-      (lift . constraint c) `mapM` P.coefficients (l - r) 
+  (coeffs,ainter) <- flip runStateT (I.mapInter (fmap fromIntegral) inter) $ 
+    forM cs $ \ c -> do
+    l <- interpret opts (lhs c)
+    r <- interpret opts (rhs c)
+    let coeffs = P.coefficients (l - r) 
+    (lift . constraint c) `mapM` coeffs
+    return coeffs
   sat <- checkSat
-  if sat then Just <$> fromAssignment ainter else return Nothing
+  if sat
+    then Just <$> refine (concat coeffs) ainter
+    else return Nothing
   where
     constraint (_ :>=: _) d = d `assertGeq` 0
     constraint (_ :=: _) d = d `assertEq` 0
-
+    refine coeffs ainter
+      | not (minimize opts) = fromAssignment ainter 
+      | otherwise           = fromAssignment ainter
+                              -- >>= setZero
+                              >>= minimizeCoeffs 5
+          -- 
+          -- forM_ bs $ \ (coeff,b) -> coeff `assertLeq` (fromIntegral b)
+          -- loop 5 bs
+      where
+        -- vs = nub (concatMap P.variables coeffs)
+        -- setZero inter = do
+        --   vs' <- filterM (getValue >=> \ w -> return (w > 0)) vs
+        --   push
+        --   assert [ EQC (lit v) 0 | v <- vs']
+        --   sat <- checkSat
+        --   if sat
+        --    then fromAssignment ainter >>= setZero
+        --    else pop >> return inter
+             
+        
+        minimizeCoeffs 0 inter = return inter
+        minimizeCoeffs n inter = do
+          bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) coeff <$> evalM coeff | coeff <- coeffs ]
+          if null bs
+            then return inter
+            else do 
+            forM_ bs $ \ (coeff,b) -> coeff `assertLeq` (fromIntegral b)
+            assert [ GEQC (fromIntegral b) (toSolverExp (coeff + 1)) | (coeff,b) <- bs ] -- TODO; interface broken
+            sat <- checkSat
+            if sat
+              then do
+               fromAssignment ainter >>= minimizeCoeffs (n-1)
+              else return inter
+          
+      
+         
 smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress
 smt solver opts cs = do
   getInterpretation >>= run solver >>= maybe fail success
   where
-    -- TODO
     run Z3 inter = z3 (solveM inter opts cs)
     run MiniSmt inter = miniSMT (solveM inter opts cs)
     
