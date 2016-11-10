@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Main where
 
 import GUBS
@@ -7,15 +8,28 @@ import System.Environment (getArgs)
 import System.Exit (exitSuccess, exitFailure)
 import Data.Tree (drawTree, Tree (..))
 
-processor :: Processor Symbol Integer Variable IO
-processor = logCS ==> try simplify ==> logCS ==> simple
+
+processor =
+  logCS ==> try simplify ==> logCS ==> try (exhaustive (sccDecompose (logCS ==> try simplify ==> simple)))
   where
     logCS cs = logOpenConstraints cs >> return (Progress cs)
-    smt' = smt MiniSmt
+    logStr str cs = logMsg str >> return (Progress cs)
     simple =
-      try (smt' defaultSMTOpts { degree = 1, maxCoeff = Just 1} )
+      logStr "SMT: trying strongly linear interpretation"
+      ==> try (smt' defaultSMTOpts { degree = 1, maxCoeff = Just 1} )
+      ==> logStr "SMT: trying linear interpretation"      
       ==> try (smt' defaultSMTOpts { degree = 1 })
-      ==> try (smt' defaultSMTOpts { degree = 2, maxCoeff = Just 1, maxConst = Just 1})
+      ==> logStr "SMT: trying strongly multmixed interpretation"            
+      ==> try (smt' defaultSMTOpts { degree = 2, maxCoeff = Just 1})
+      ==> logStr "SMT: trying multmixed interpretation"            
+      ==> try (smt' defaultSMTOpts { degree = 2, maxCoeff = Nothing})
+      ==> logStr "SMT: trying mixed interpretation"                  
+      ==> try (smt' defaultSMTOpts { degree = 2, shape = Mixed, maxCoeff = Nothing})
+      ==> logStr "SMT: trying multmixed interpretation of degree 3"            
+      ==> try (smt' defaultSMTOpts { degree = 3, maxCoeff = Nothing})
+      ==> logStr "SMT: trying multmixed interpretation of degree 3"            
+      ==> try (smt' defaultSMTOpts { degree = 3, shape = Mixed, maxCoeff = Nothing})
+    smt' = smt Z3
     simplify =
       try instantiate
       ==> try propagateEq

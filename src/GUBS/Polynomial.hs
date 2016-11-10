@@ -121,7 +121,7 @@ substitute p s = rename fromRight (foldl' substitute1 p' s') where
 polyToTerm :: Integral c => Polynomial v c -> Term f v
 polyToTerm p = sum [Const (toInteger c) * monoToTerm m | (c,m) <- toMonos p] where
   monoToTerm m = product [ product (replicate p (Var v)) | (v,p) <- toPowers m]
-
+ 
 evalWithM :: (Num c, Monad m) => (v -> m c) -> Polynomial v c -> m c
 evalWithM getValue = eval where
   eval p = sum <$> sequence [ (*) c <$> evalMono m | (c,m) <- toMonos p]

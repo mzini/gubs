@@ -8,6 +8,7 @@ module GUBS.Solve.Strategy (
   , logMsg
   , logBlk                       
   , (==>)
+  , (<==)  
   , (<=>)
   , abort
   , try
@@ -50,11 +51,11 @@ modifyInterpretation = modify
 
 
 logInterpretation :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ProcT f c m ()
-logInterpretation = void $ logBlk "Interpretation" $ 
-    fmap toList getInterpretation >>= mapM logBinding where
-  logBinding (f,p) = 
-    logMsg (PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- Poly.variables p]))
-            PP.<+> PP.text "=" PP.<+> PP.pretty p)
+logInterpretation = getInterpretation >>= \ i -> logMsg (PP.text "Interpretation" PP.<$> PP.pretty i)
+    -- fmap toList getInterpretation >>= mapM logBinding where
+  -- logBinding ((f,i),p) = 
+  --   logMsg (PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- take Poly.variables p]))
+  --           PP.<+> PP.text "=" PP.<+> PP.pretty p)
     
 logConstraints' :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logConstraints'  cs = do
@@ -67,7 +68,7 @@ logConstraints'  cs = do
         PP.pretty l PP.<+> PP.hang 2 (PP.text "=" PP.<+> pp i l
                                       PP.</> PP.text eq PP.<+> pp i r
                                       PP.</> PP.text "=" PP.<+> PP.pretty r)
-      pp i t = maybe (PP.pretty (pInterpret i t)) PP.pretty (interpret i t)
+      pp i t = PP.pretty (pInterpret i t)
 
 logConstraints :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logConstraints cs = logBlk "Constraints" $ logConstraints' cs
@@ -103,6 +104,9 @@ p1 <=> p2 = \cs -> do
   case r of 
     Progress cs' -> return (Progress cs')
     NoProgress -> put inter >> p2 cs
+
+(<==) :: Monad m => Processor f c v m -> Processor f c v m -> Processor f c v m
+(<==) = flip (==>)
 
 (==>) :: Monad m => Processor f c v m -> Processor f c v m -> Processor f c v m
 p1 ==> p2 = \cs -> do 

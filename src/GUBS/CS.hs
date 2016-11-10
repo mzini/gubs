@@ -73,16 +73,16 @@ varsDL (Neg t) = varsDL t
 vars :: Term f v -> [v]
 vars = flip varsDL []
         
-funsDL :: Term f v -> [f] -> [f]
+funsDL :: Term f v -> [(f,Int)] -> [(f,Int)]
 funsDL Var {} = id
 funsDL Const {} = id            
-funsDL (Fun f ts) = (f:) . foldr ((.) . funsDL) id ts
+funsDL (Fun f ts) = ((f,length ts):) . foldr ((.) . funsDL) id ts
 funsDL (Mult t1 t2) = funsDL t1 . funsDL t2 
 funsDL (Plus t1 t2) = funsDL t1 . funsDL t2 
 funsDL (Minus t1 t2) = funsDL t1 . funsDL t2        
 funsDL (Neg t) = funsDL t
 
-funs :: Eq f => Term f v -> [f]
+funs :: Eq f => Term f v -> [(f,Int)]
 funs = nub . flip funsDL []
 
 definedSymbol :: Term f v -> Maybe f
@@ -114,17 +114,14 @@ neg (Neg i) = i
 neg (Const j) = Const (-j)
 neg e = Neg e
 
-substitute :: Eq v => [(v,Term f v)] -> Term f v -> Term f v
-substitute subst (Var v) =
-  case lookup v subst of
-    Nothing -> Var v
-    Just t -> t
-substitute _ t@Const{} = t
-substitute subst (Fun f ts) = Fun f (substitute subst `map` ts)
-substitute subst (Mult t1 t2) = substitute subst t1 * substitute subst t2
-substitute subst (Plus t1 t2) = substitute subst t1 + substitute subst t2
+substitute :: Eq v => (v -> Term f v') -> Term f v -> Term f v'
+substitute subst (Var v)       = subst v
+substitute _     (Const c)     = Const c
+substitute subst (Fun f ts)    = Fun f (substitute subst `map` ts)
+substitute subst (Mult t1 t2)  = substitute subst t1 * substitute subst t2
+substitute subst (Plus t1 t2)  = substitute subst t1 + substitute subst t2
 substitute subst (Minus t1 t2) = substitute subst t1 - substitute subst t2
-substitute subst (Neg t) = neg (substitute subst t)
+substitute subst (Neg t)       = neg (substitute subst t)
 
 
 instance Num (Term f v) where
@@ -150,7 +147,7 @@ lhs (l :>=: r) = l
 rhs (l :>=: r) = r
 rhs (l :=: r) = r
 
-cfuns :: Eq f => Constraint f c -> [f]
+cfuns :: Eq f => Constraint f c -> [(f,Int)]
 cfuns c = nub (funsDL (lhs c) (funsDL (rhs c) []))
 
 type ConstraintSystem f v = [Constraint f v]
@@ -159,8 +156,7 @@ type ConstraintSystem f v = [Constraint f v]
 sccs :: Eq f => ConstraintSystem f v -> [[Constraint f v]]
 sccs cs = map flattenSCC sccs'
   where
-    sccs' = stronglyConnComp [ (c, i, succs c)
-                             | (i, c) <- ecs ]
+    sccs' = stronglyConnComp [ (c, i, succs c) | (i, c) <- ecs ]
     ecs = zip [0 ..] cs
     succs c@(l :=: r) = succs (l :>=: r) ++ succs (r :>=: l)
     succs c@(l :>=: r) = [ j

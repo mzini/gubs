@@ -63,9 +63,9 @@ freshPoly opts ar =
     freshCoeff mono = do
       v <- variable <$> fresh
       assertGeq v 0
+      -- unless (null mono) (assertGeq v 0) -- TODO: problems with Z3
       let maxC = if null mono then maxConst opts else maxCoeff opts
       maybe (return ()) (\ ub -> assertGeq (fromIntegral ub) v) maxC
-        -- unless (null mono) (assert (v `geq` 0)) -- TODO: problems with Z3
       return v
 
 interpret :: (Solver s m, Ord f, Ord v) => SMTOpts -> Term f v -> StateT (AbstractInterpretation s f) (SolverM s m) (AbstractPolynomial s v)
@@ -76,12 +76,13 @@ interpret opts (Mult t1 t2) = (*) <$> interpret opts t1 <*> interpret opts t2
 interpret opts (Minus t1 t2) = (-) <$> interpret opts t1 <*> interpret opts t2
 interpret opts (Neg t) = negate <$> interpret opts t
 interpret opts (Fun f ts) = do I.apply <$> getPoly <*> mapM (interpret opts) ts where
+    ar = length ts                             
     getPoly = do
       ainter <- get
-      maybe (addPoly ainter) return (I.get ainter f)
+      maybe (addPoly ainter) return (I.get ainter f ar)
     addPoly ainter = do
-      p <- lift (freshPoly opts (length ts))
-      put (I.insert ainter f p)
+      p <- lift (freshPoly opts ar)
+      put (I.insert ainter f (length ts) p)
       return p
 
 
