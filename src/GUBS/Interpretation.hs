@@ -1,6 +1,7 @@
 module GUBS.Interpretation where
 
 import Data.Maybe (fromMaybe)
+import Data.List (foldl')
 import GUBS.Polynomial hiding (variables, substitute)
 import qualified GUBS.Polynomial as P
 import GUBS.CS (Term (..), Constraint (..), ConstraintSystem, substitute)
@@ -32,11 +33,14 @@ get' inter f i = fromMaybe err (get inter f i) where
 insert :: Ord f => Interpretation f c -> f -> Int -> Polynomial Var c -> Interpretation f c 
 insert (Inter m) f i p = Inter (M.insert (f,i) p m)
 
+empty :: Interpretation f c
+empty = Inter M.empty
+
 union :: Ord f => Interpretation f c -> Interpretation f c -> Interpretation f c
 union (Inter m1) (Inter m2) = Inter (m1 `M.union` m2)
 
-empty :: Interpretation f c
-empty = Inter M.empty
+unions :: Ord f => [Interpretation f c] -> Interpretation f c
+unions = foldl' union empty 
 
 apply :: (Eq c, Num c, Ord v) => Polynomial Var c -> [Polynomial v c] -> Polynomial v c
 apply p args = P.substitute p (zip variables args) 
