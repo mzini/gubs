@@ -28,9 +28,10 @@ import           Control.Monad.Trace
 import           Data.Tree (Forest)
 
 import           GUBS.Utils
-import qualified GUBS.Polynomial as Poly
+import           GUBS.Algebra
 import           GUBS.Interpretation hiding (get)
-import           GUBS.CS
+import           GUBS.Constraint
+import           GUBS.ConstraintSystem
 
 type ExecutionLog = Forest String
                            
@@ -50,30 +51,30 @@ modifyInterpretation :: Monad m => (Interpretation f c -> Interpretation f c) ->
 modifyInterpretation = modify
 
 
-logInterpretation :: (Eq c, Num c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ProcT f c m ()
+logInterpretation :: (Eq c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ProcT f c m ()
 logInterpretation = getInterpretation >>= \ i -> logMsg (PP.text "Interpretation" PP.<$> PP.pretty i)
     -- fmap toList getInterpretation >>= mapM logBinding where
   -- logBinding ((f,i),p) = 
   --   logMsg (PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- take Poly.variables p]))
   --           PP.<+> PP.text "=" PP.<+> PP.pretty p)
     
-logConstraints' :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logConstraints' :: (Multiplicative c, Max c, IsNat c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logConstraints'  cs = do
     i <- getInterpretation
     mapM_ (logConstraint i) cs
     where
       logConstraint i (l :>=: r) = logConstraint' ">=" i l r
-      logConstraint i (l :=: r) = logConstraint' "=" i l r
+      -- logConstraint i (l :=: r) = logConstraint' "=" i l r
       logConstraint' eq i l r = logMsg $
         PP.pretty l PP.<+> PP.hang 2 (PP.text "=" PP.<+> pp i l
                                       PP.</> PP.text eq PP.<+> pp i r
                                       PP.</> PP.text "=" PP.<+> PP.pretty r)
       pp i t = PP.pretty (pInterpret i t)
 
-logConstraints :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logConstraints :: (Multiplicative c, Max c, IsNat c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logConstraints cs = logBlk "Constraints" $ logConstraints' cs
 
-logOpenConstraints :: (Eq c, Num c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logOpenConstraints :: (Multiplicative c, Max c, IsNat c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logOpenConstraints  cs = 
   logBlk "Open Constraints" $ do 
     i <- getInterpretation

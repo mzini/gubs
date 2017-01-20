@@ -10,8 +10,12 @@ cabal-version:       >=1.10
 
 
 library
-  exposed-modules: GUBS.CS
+  exposed-modules: GUBS.Algebra
+                   GUBS.Term
+                   GUBS.Constraint
+                   GUBS.ConstraintSystem
                    GUBS.Polynomial
+                   GUBS.MaxPolynomial                   
                    GUBS.Expression
                    GUBS.Interpretation
                    GUBS.Solve

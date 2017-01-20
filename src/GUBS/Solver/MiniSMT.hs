@@ -23,7 +23,8 @@ import           System.Process
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           GUBS.Utils
-import           GUBS.Expression
+import           GUBS.Algebra
+import qualified GUBS.Expression as E
 import qualified GUBS.Polynomial as Poly
 import           GUBS.Solver.Class
 
@@ -169,22 +170,23 @@ runMiniSMT vs cs = do
 
 instance MonadTrans (SolverM MiniSMT) where
   lift m = S (lift m)
-    
-instance SMTSolver MiniSMT where
-  data SolverM MiniSMT m a = S (St.StateT SolverState m a) deriving (Functor)
-  data Literal MiniSMT = Lit Symbol
-  data Exp MiniSMT = Exp (Expression (Literal MiniSMT))
 
-  lit = Exp . variable
-  constnt = Exp . constant
-  
+instance Monad m => Supply (SolverM MiniSMT m) (Literal MiniSMT) where
   fresh = do
     st@SolverState{..} <- St.get
     let sym = Symbol freshId
     St.put st { freshId = freshId + 1
               , curFrame = curFrame { fFreeVars = Set.insert sym (fFreeVars curFrame) } }
     return (Lit sym)
+  
+instance SMTSolver MiniSMT where
+  data SolverM MiniSMT m a = S (St.StateT SolverState m a) deriving (Functor)
+  data Literal MiniSMT = Lit Symbol
+  data Exp MiniSMT = Exp (E.Expression (Literal MiniSMT))
 
+  lit = Exp . E.variable
+  constnt = Exp . fromNatural
+  
   toSolverExp = Exp
   
   push = St.modify pushFrame
@@ -228,17 +230,16 @@ instance Read (Literal MiniSMT) where
 deriving instance Eq (Literal MiniSMT)
 deriving instance Ord (Literal MiniSMT)
 
-liftUn f (Exp e) = Exp (f e)
-liftBin f (Exp e1) (Exp e2) = Exp (f e1 e2)
+instance IsNat (Exp MiniSMT) where
+  fromNatural_ = Exp . fromNatural_
 
-instance Num (Exp MiniSMT) where
-  fromInteger = Exp . fromInteger
-  (+) = liftBin (+)
-  (-) = liftBin (-)
-  (*) = liftBin (*)
-  negate = liftUn negate
-  abs = liftUn abs
-  signum = liftUn signum
+instance Additive (Exp MiniSMT) where
+  zero = Exp zero
+  Exp e1 .+ Exp e2 = Exp (e1 .+ e2)
+
+instance Multiplicative (Exp MiniSMT) where
+  one = Exp one
+  Exp e1 .* Exp e2 = Exp (e1 .* e2)
 
 miniSMT :: (MonadTrace String m, MonadIO m) => SolverM MiniSMT m a -> m a
 miniSMT (S m) = St.evalStateT m initialState where

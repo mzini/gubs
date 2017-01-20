@@ -1,13 +1,17 @@
 {-# LANGUAGE FlexibleContexts #-}
 module GUBS.Solve.SCC (sccDecompose) where
 
-import GUBS.Solve.Strategy
-import GUBS.CS
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
-sccDecompose :: (Eq f, Monad m, Ord v, PP.Pretty v, Eq c, Num c, Integral c, Ord f, PP.Pretty f, PP.Pretty c) => Processor f c v m -> Processor f c v m
+import           GUBS.Solve.Strategy
+import           GUBS.Algebra
+import qualified GUBS.ConstraintSystem as CS
+
+
+
+sccDecompose :: (Monad m, Ord v, PP.Pretty v, Eq c, Integral c, SemiRing c, Max c, IsNat c, PP.Pretty c, Eq f, Ord f, PP.Pretty f) => Processor f c v m -> Processor f c v m
 sccDecompose p cs =
-  case sccs cs of
+  case CS.sccs cs of
     [] -> return NoProgress
     (scc:sccs) -> do
       logMsg ("SCC:" ++ show (length sccs + 1) ++ " SCCs")

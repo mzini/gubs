@@ -6,11 +6,17 @@ import qualified Debug.Trace as TR
 import qualified Control.Monad.Trace as MTR
 
 
+class PrettySexp a where
+  prettySexp :: a -> PP.Doc
+
 ppSexp :: [PP.Doc] -> PP.Doc
 ppSexp = PP.encloseSep PP.lparen PP.rparen PP.space
 
 ppCall :: PP.Pretty e => String -> [e] -> PP.Doc
 ppCall n args = ppSexp (PP.text n : map PP.pretty args)
+
+ppBin :: (PP.Pretty a, PP.Pretty b) => (PP.Doc -> PP.Doc) -> String -> a -> b -> PP.Doc
+ppBin par f a b = par (PP.pretty a PP.</> PP.text f PP.<+> PP.pretty b)
 
 renderPretty :: PP.Pretty e => e -> String
 renderPretty d = PP.displayS (PP.renderSmart 1.0 200 (PP.pretty d)) ""
@@ -34,3 +40,7 @@ logMsg = MTR.trace . renderPretty
 
 logBlk :: MTR.MonadTrace String m => PP.Pretty e => e -> m a -> m a
 logBlk = MTR.scopeTrace . renderPretty
+
+whenJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
+whenJust (Just a) m = m a
+whenJust _        _ = pure ()

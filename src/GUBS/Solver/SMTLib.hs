@@ -2,6 +2,7 @@ module GUBS.Solver.SMTLib (
   z3
   ) where
 
+import GUBS.Algebra
 import GUBS.Solver.Class
 import qualified Language.SMTLib2 as SMT
 import qualified Language.SMTLib2.Internals as SMTI
@@ -10,17 +11,17 @@ import Control.Monad.Trans (MonadIO, liftIO, MonadTrans (..)) --TODO
 
 data SMTLibSolver = SMTLibSolver
 
-liftUn f (Exp e) = Exp (f e)
-liftBin f (Exp e1) (Exp e2) = Exp (f e1 e2)
+instance IsNat (Exp SMTLibSolver) where
+  fromNatural_ = Exp . fromInteger
+  
+instance Additive (Exp SMTLibSolver) where
+  zero = fromNatural 0
+  Exp e1 .+ Exp e2 = Exp (e1 + e2)
 
-instance Num (Exp SMTLibSolver) where
-  fromInteger = Exp . fromInteger
-  (+) = liftBin (+)
-  (-) = liftBin (-)
-  (*) = liftBin (*)
-  negate = liftUn negate
-  abs = liftUn abs
-  signum = liftUn signum
+instance Multiplicative (Exp SMTLibSolver) where
+  one = fromNatural 1
+  Exp e1 .* Exp e2 = Exp (e1 * e2)  
+  
 
 liftSMT :: SMT.SMT' m a -> SolverM SMTLibSolver m a
 liftSMT = SMT
@@ -36,6 +37,14 @@ instance Monad m => Monad (SolverM SMTLibSolver m) where
 instance MonadTrans (SolverM SMTLibSolver) where
   lift m = SMT (lift m)
 
+instance Monad m => Supply (SolverM SMTLibSolver m) (Literal SMTLibSolver) where
+  fresh = do
+    SMTI.Var res ann <- liftSMT var
+    return (Lit (res,ann))
+    where
+      var :: Monad m => SMT.SMT' m (SMT.SMTExpr Integer)
+      var = SMT.var
+  
 instance SMTSolver SMTLibSolver where
   data SolverM SMTLibSolver m a = SMT (SMT.SMT' m a) deriving (Functor)
   data Literal SMTLibSolver = Lit (Integer, SMTI.SMTAnnotation Integer) deriving Show
@@ -43,12 +52,6 @@ instance SMTSolver SMTLibSolver where
 
   lit (Lit (i,ann)) = Exp (SMTI.Var i ann)
   constnt = Exp <$> SMT.constant
-  fresh = do
-    v@(SMTI.Var res ann) <- liftSMT var
-    return (Lit (res,ann))
-    where
-      var :: Monad m => SMT.SMT' m (SMT.SMTExpr Integer)
-      var = SMT.var
 
   assert cs = liftSMT (SMT.assert (SMT.app SMT.or' (f `map` cs))) where
     f (GEQC (Exp l) (Exp r)) = l SMT..>=. r
