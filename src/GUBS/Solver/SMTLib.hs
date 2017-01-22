@@ -26,6 +26,21 @@ instance Multiplicative (Exp SMTLibSolver) where
 liftSMT :: SMT.SMT' m a -> SolverM SMTLibSolver m a
 liftSMT = SMT
 
+toSMTFormula :: Formula SMTLibSolver -> SMTI.SMTExpr Bool
+toSMTFormula f =
+  case f of
+    Top -> SMT.constant True
+    Bot -> SMT.constant False
+    Geq (Exp l) (Exp r) -> l SMT..>=. r
+    Eq (Exp l) (Exp r) ->  l SMT..==. r
+    Not f -> SMT.not' (toSMTFormula f)
+    Iff f1 f2 -> toSMTFormula (And (Imp f1 f2) (Imp f2 f1))
+    Imp f1 f2 -> toSMTFormula f1 SMT..=>. toSMTFormula f2
+    Ite f1 f2 f3 -> SMT.ite (toSMTFormula f1) (toSMTFormula f2) (toSMTFormula f3)
+    And f1 f2 -> app SMT.and' [f1,f2]
+    Or f1 f2 -> app SMT.or' [f1,f2]
+  where app op fs = SMT.app op (map toSMTFormula fs)
+
 instance Monad m => Applicative (SolverM SMTLibSolver m) where
   pure a = SMT (pure a)
   SMT a1 <*> SMT a2 = SMT (a1 <*> a2)
@@ -44,7 +59,7 @@ instance Monad m => Supply (SolverM SMTLibSolver m) (Literal SMTLibSolver) where
     where
       var :: Monad m => SMT.SMT' m (SMT.SMTExpr Integer)
       var = SMT.var
-  
+
 instance SMTSolver SMTLibSolver where
   data SolverM SMTLibSolver m a = SMT (SMT.SMT' m a) deriving (Functor)
   data Literal SMTLibSolver = Lit (Integer, SMTI.SMTAnnotation Integer) deriving Show
@@ -52,10 +67,7 @@ instance SMTSolver SMTLibSolver where
 
   lit (Lit (i,ann)) = Exp (SMTI.Var i ann)
   constnt = Exp <$> SMT.constant
-
-  assert cs = liftSMT (SMT.assert (SMT.app SMT.or' (f `map` cs))) where
-    f (GEQC (Exp l) (Exp r)) = l SMT..>=. r
-    f (EQC  (Exp l) (Exp r)) = SMT.app SMT.and' [l SMT..>=. r, r SMT..>=. l]
+  assertFormula f = liftSMT (SMT.assert (toSMTFormula f))
   getValue (Lit (i,ann)) = liftSMT (SMT.getValue (SMTI.Var i ann))
   push = liftSMT SMT.push
   pop = liftSMT SMT.pop

@@ -9,6 +9,7 @@ import qualified Data.MultiSet as MS
 import qualified Data.Set as S
 
 import           GUBS.Algebra
+import           GUBS.Constraint (Constraint(..))
 import qualified GUBS.Term as T
 
 newtype Monomial v = Mono (MultiSet v)
@@ -69,8 +70,11 @@ variables p = S.toAscList (S.unions [ MS.toSet m | (_,Mono m) <- toMonos p ])
 rename :: Ord v' => (v -> v') -> Polynomial v c -> Polynomial v' c
 rename f (Poly ms) = Poly (M.mapKeys (\ (Mono m) -> Mono (MS.map f m)) ms)
 
--- norm :: (IsNat c, Eq c) => Polynomial v c -> Polynomial v c
--- norm (Poly ms) = Poly (M.filter ((/=) (fromNatural 0)) ms)
+norm :: (IsNat c, Eq c) => Polynomial v c -> Polynomial v c
+norm (Poly ms) = Poly (M.filter ((/=) (fromNatural 0)) ms)
+
+isZero :: (Eq c, IsNat c) => Polynomial v c -> Bool
+isZero p = and [ c == fromNatural 0 || null (toPowers m) | (c,m) <- toMonos p ]
 
 zeroPoly :: IsNat c => Polynomial v c
 zeroPoly = fromNatural 0
@@ -88,16 +92,23 @@ instance (SemiRing c, Ord v, IsNat c) => Multiplicative (Polynomial v c) where
     ms = [ (m1 `mult` m2, c1 .* c2) | (m1,c1) <- M.toList ms1, (m2,c2) <- M.toList ms2 ]
     Mono ps1 `mult` Mono ps2 = Mono (MS.union ps1 ps2)
 
--- TODO: check that valid on non-normalized polys
-factorise :: (IsNat c, Integral c, SemiRing c, Ord v) => Polynomial v c -> Maybe ((Monomial v, c), Polynomial v c)
-factorise p
-  | length ms <= 1  = Nothing
-  | MS.size mf == 0 = Nothing
-  | otherwise       = Just ( (Mono mf,1) , fromMonos [ (c, Mono (m MS.\\ mf))  | (c, Mono m) <- ms])
+factorise :: (Eq c, IsNat c, Integral c, SemiRing c, Ord v) => [Polynomial v c] -> Maybe ((c,Monomial v), [Polynomial v c])
+factorise (fmap (toMonos . norm) -> ps)
+  | leq1 monos       = Nothing
+  | MS.size msf == 0 = Nothing
+  | otherwise        = Just ( (cf,Mono msf) , map factor ps)
   where
-    ms = toMonos p
-    mf = foldl1' MS.intersection [ m | (_,Mono m) <- ms ]
-    cf = foldl1' gcd [ c | (c,_) <- ms]
+    monos  = concat ps
+    
+    msf = foldl1' MS.intersection [ m | (_,Mono m) <- monos ]
+    cf = foldl1' gcd [ c | (c,_) <- monos]
+
+    factor p = fromMonos [ (c `div` cf, Mono (m MS.\\ msf))  | (c, Mono m) <- p]
+    
+    leq1 []       = True
+    leq1 (_ : []) = True
+    leq1 _        = False
+    
 
 -- neg :: (Num c) => Polynomial v c -> Polynomial v c
 -- neg (Poly ms) = Poly (M.map negate ms)

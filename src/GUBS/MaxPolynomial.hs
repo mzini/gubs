@@ -107,7 +107,7 @@ maxElim ieq = walk [([],ieq)] where
       
 -- pretty printing
 
-simp :: (Eq c, Eq c, Eq v, IsNat c, SemiRing c, Max c) => MaxPoly v c -> MaxPoly v c
+simp :: (Eq c, Eq v, IsNat c, SemiRing c, Max c) => MaxPoly v c -> MaxPoly v c
 simp = simp' where
   simp' (Var v)      = Var v  
   simp' (Const i)    = Const i

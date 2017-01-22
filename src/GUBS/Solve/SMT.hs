@@ -57,8 +57,8 @@ defaultSMTOpts =
 freshNat :: (Solver s m) => Maybe Int -> SolverM s m (AbstractCoefficient s)
 freshNat mub = do
   v <- E.variable <$> fresh
-  assertGeq v (fromNatural 0)
-  whenJust mub $ \ ub -> assertGeq (fromNatural ub) v
+  assert (v `smtGeq` fromNatural 0)
+  whenJust mub $ \ ub -> assert (fromNatural ub `smtGeq` v)
   return v
 
 
@@ -99,13 +99,15 @@ interpret opts = T.interpretM (return . MP.variable) i where
 
 
 condElim :: (Ord v, Solver s m) => ConditionalConstraint (AbstractPoly s v) -> SolverM s m (Constraint (AbstractPoly s v))
-condElim CC { .. } = do
-  eliminateCond constraint <$> replicateM (length premises) (freshNat (Just 1))
-  where
-    eliminateCond (p :>=: q) cs = l :>=: r where
-      -- heuristic from Maximal Termination Paper, footnote 15
-      l = p .+ sumA [ P.coefficient ci .* qi | (ci,_ :>=: qi) <- zip cs premises]
-      r = q .+ sumA [ P.coefficient ci .* pi | (ci,pi :>=: _) <- zip cs premises]
+condElim CC { .. }
+  | null premises = return constraint
+  | otherwise = do
+      eliminateCond constraint <$> replicateM (length premises) (freshNat (Just 1))
+        where
+          eliminateCond (p :>=: q) cs = l :>=: r where
+            -- heuristic from Maximal Termination Paper, footnote 15
+            l = p .+ sumA [ P.coefficient ci .* qi | (ci,_ :>=: qi) <- zip cs premises]
+            r = q .+ sumA [ P.coefficient ci .* pi | (ci,pi :>=: _) <- zip cs premises]
                                            
 
 data AbstractCoefficientDiff s =
@@ -142,7 +144,7 @@ solveM :: (Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f In
 solveM inter opts cs = do
   (cconstrs,ainter) <- flip runStateT (I.mapInter (fmap fromNatural) inter) $
     foldM collectCoefficientConstraints [] cs
-  forM_ cconstrs $ \ (p :>=: n) -> assertGeq p n
+  assert (smtBigAnd [ p `smtGeq` n | p :>=: n <- cconstrs])
   sat <- checkSat  
   if sat
     then Just <$> refine cconstrs ainter
@@ -167,9 +169,9 @@ solveM inter opts cs = do
             bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) coeff <$> evalM coeff | (coeff :>=: _) <- cconstrs ]
             if null bs
               then return inter
-              else do 
-              forM_ bs $ \ (coeff,b) -> fromNatural b `assertGeq` coeff 
-              assert [ GEQC (fromNatural (b - 1)) (toSolverExp coeff) | (coeff,b) <- bs ] -- TODO; interface broken
+              else do
+              assert (smtBigAnd [ fromNatural b     `smtGeq` coeff | (coeff,b) <- bs ])
+              assert (smtBigOr  [ fromNatural (b-1) `smtGeq` coeff | (coeff,b) <- bs ])
               sat <- checkSat
               if sat
                 then fromAssignment ainter >>= minimizeCoeffs (n-1)
