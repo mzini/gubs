@@ -140,7 +140,7 @@ instance SMT.SMTSolver s => AdditiveGroup (AbstractCoefficientDiff s) where
 fromAssignment :: (Solver s m) => AbstractInterpretation s f -> SolverM s m (Interpretation f Integer)
 fromAssignment = traverse evalM
 
-solveM :: (Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
+solveM :: (PP.Pretty v, PP.Pretty (Literal s), Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter opts cs = do
   (cconstrs,ainter) <- flip runStateT (I.mapInter (fmap fromNatural) inter) $
     foldM collectCoefficientConstraints [] cs
@@ -157,7 +157,8 @@ solveM inter opts cs = do
       collectCoefficientConstraints ccs (l :>=: r) = do
         il <- interpret opts l
         ir <- interpret opts r
-        cs <- lift (condElim `mapM` (MP.maxElim (il :>=: ir)))
+        let mcs = MP.maxElim (il :>=: ir)
+        cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
         return (foldr ((++) . toCoefficientConstraints) ccs cs)
 
       refine cconstrs ainter
@@ -189,7 +190,7 @@ solveM inter opts cs = do
              
       
          
-smt :: (Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
+smt :: (PP.Pretty v, Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress
 smt solver opts cs = do
   getInterpretation >>= run solver >>= maybe fail success

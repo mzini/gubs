@@ -23,12 +23,14 @@ module GUBS.Solver.Class (
 
 import Control.Monad.Trans (MonadIO, MonadTrans)
 import Control.Monad.Trace
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import GUBS.Algebra hiding (neg)
 import GUBS.Expression
 import GUBS.Constraint (Constraint (..))
 import qualified GUBS.Polynomial as Poly
 
+-- TODO IEQs not allowed under negative positions
 data Formula s =
   Top
   | Bot
@@ -48,7 +50,7 @@ data Formula s =
 class Supply m v where
   fresh :: m v
     
-class (Show (Literal s), Ord (Literal s), SemiRing (Exp s), IsNat (Exp s), MonadTrans (SolverM s)) => SMTSolver s where
+class (Show (Literal s), PP.Pretty (Literal s), Ord (Literal s), SemiRing (Exp s), IsNat (Exp s), MonadTrans (SolverM s)) => SMTSolver s where
   data SolverM s :: (* -> *) -> * -> *
   data Literal s :: *
   data Exp s :: *
@@ -65,6 +67,7 @@ class (Show (Literal s), Ord (Literal s), SemiRing (Exp s), IsNat (Exp s), Monad
   assertFormula :: Monad m => Formula s -> SolverM s m () -- TODO monadio
   checkSat :: (MonadIO m, MonadTrace String m) => SolverM s m Bool
   getValue :: Monad m => Literal s -> SolverM s m Integer
+
 
 type Solver s m = (SMTSolver s, MonadIO m, Monad (SolverM s m), Supply (SolverM s m) (Literal s))
 
@@ -138,14 +141,14 @@ smtEq = smtFactorIEQ simpEq
 smtGeq = smtFactorIEQ simpGeq
 
 smtFactorIEQ :: SMTSolver s => (Expression (Literal s) -> Expression (Literal s) -> Formula s) -> Expression (Literal s) -> Expression (Literal s) -> Formula s
-smtFactorIEQ eq e1 e2 =
+smtFactorIEQ eq e1 e2 = 
   case Poly.factorise [e1,e2] of
     Just ((_,m), [e1',e2']) -> smtBigOr (e1' `eq` e2' : [ lit v `Eq` fromNatural 0 | v <- Poly.monoVariables m])
     _ -> e1 `eq` e2
     
--- TODO       
 stack :: Solver s m => SolverM s m a -> SolverM s m a
 stack m = push *> m <* pop
 
 evalM :: Solver s m => Expression (Literal s) -> SolverM s m Integer
 evalM = evalWithM getValue
+

@@ -29,10 +29,9 @@ processor =
       ==> try (smt' defaultSMTOpts { degree = 3, maxCoeff = Nothing})
       ==> logStr "SMT: trying multmixed interpretation of degree 3"            
       ==> try (smt' defaultSMTOpts { degree = 3, shape = Mixed, maxCoeff = Nothing})
-    smt' = smt Z3
+    smt' = smt MiniSmt
     simplify =
       try instantiate
-      ==> try propagateEq
       ==> try (exhaustive (propagateUp <=> propagateDown))
 
 main :: IO ()

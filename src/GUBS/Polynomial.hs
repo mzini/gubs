@@ -108,14 +108,6 @@ factorise (fmap (toMonos . norm) -> ps)
     leq1 []       = True
     leq1 (_ : []) = True
     leq1 _        = False
-    
-
--- neg :: (Num c) => Polynomial v c -> Polynomial v c
--- neg (Poly ms) = Poly (M.map negate ms)
-
--- minus :: (Eq c, Num c, Ord v) => Polynomial v c -> Polynomial v c -> Polynomial v c
--- minus p1 p2 = p1 `plus` neg p2
-
 
 substitute :: (Ord v', IsNat c, SemiRing c) => (v -> Polynomial v' c) -> Polynomial v c -> Polynomial v' c 
 substitute s p = sumA [ substMono m | (_,m) <- toMonos p]
@@ -158,6 +150,6 @@ instance (PP.Pretty c, IsNat c, Eq c, PP.Pretty v) => PP.Pretty (Polynomial v c)
     pretty' ps = PP.hcat (PP.punctuate (PP.char '+') (ppMono `map` ps))
     ppMono (c,mono) | c == fromNatural 1 = PP.pretty mono
     ppMono (c,toPowers -> []) = PP.pretty c
-    ppMono (c,mono) = PP.pretty c PP.<> PP.char '*' PP.<> PP.pretty mono
+    ppMono (c,mono) = PP.parens (PP.pretty c) PP.<> PP.char '*' PP.<> PP.pretty mono
 
    

@@ -28,7 +28,6 @@ import qualified GUBS.Expression as E
 import qualified GUBS.Polynomial as Poly
 import           GUBS.Solver.Class
 
-
 data MiniSMT = MiniSMT
 
 newtype Symbol = Symbol Int deriving (Eq, Ord, Show)

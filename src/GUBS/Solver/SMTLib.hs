@@ -8,6 +8,7 @@ import qualified Language.SMTLib2 as SMT
 import qualified Language.SMTLib2.Internals as SMTI
 import qualified Language.SMTLib2.Solver as SMT
 import Control.Monad.Trans (MonadIO, liftIO, MonadTrans (..)) --TODO
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 data SMTLibSolver = SMTLibSolver
 
@@ -78,3 +79,6 @@ z3 (SMT m) = SMT.withZ3 m
 
 deriving instance Eq (Literal SMTLibSolver)
 deriving instance Ord (Literal SMTLibSolver)
+
+instance PP.Pretty (Literal SMTLibSolver) where
+  pretty (Lit (i,_)) = PP.text "v" PP.<> PP.integer i
