@@ -127,23 +127,25 @@ isZero e = smtBigAnd [ smtBool (c == 0)
                      | (c,m) <- Poly.toMonos e]
   
 simpEq,simpGeq :: SMTSolver s => Expression (Literal s) -> Expression (Literal s) -> Formula s
--- simpEq e1 e2 = toSolverExp e1 `Eq` toSolverExp e2
--- simpGeq e1 e2 = toSolverExp e1 `Geq` toSolverExp e2
-simpEq e1 e2 | Poly.isZero e1 = isZero e2
-             | Poly.isZero e2 = isZero e1
-             | otherwise      = toSolverExp e1 `Eq` toSolverExp e2
-simpGeq e1 e2 | Poly.isZero e1 = isZero e2
-              | otherwise      = toSolverExp e1 `Geq` toSolverExp e2
+simpEq e1 e2 = toSolverExp e1 `Eq` toSolverExp e2
+simpGeq e1 e2 = toSolverExp e1 `Geq` toSolverExp e2
+-- simpEq e1 e2 | Poly.isZero e1 = isZero e2
+--              | Poly.isZero e2 = isZero e1
+--              | otherwise      = toSolverExp e1 `Eq` toSolverExp e2
+-- simpGeq e1 e2 | Poly.isZero e1 = isZero e2
+--               | otherwise      = toSolverExp e1 `Geq` toSolverExp e2
 
 
 smtEq,smtGeq :: SMTSolver s => Expression (Literal s) -> Expression (Literal s) -> Formula s
+-- smtEq e1 e2 = Eq (toSolverExp e1) (toSolverExp e2)
+-- smtGeq e1 e2 = Geq (toSolverExp e1) (toSolverExp e2)
 smtEq = smtFactorIEQ simpEq
 smtGeq = smtFactorIEQ simpGeq
 
 smtFactorIEQ :: SMTSolver s => (Expression (Literal s) -> Expression (Literal s) -> Formula s) -> Expression (Literal s) -> Expression (Literal s) -> Formula s
 smtFactorIEQ eq e1 e2 = 
   case Poly.factorise [e1,e2] of
-    Just ((_,m), [e1',e2']) -> smtBigOr (e1' `eq` e2' : [ lit v `Eq` fromNatural 0 | v <- Poly.monoVariables m])
+    Just ((_,m), [e1',e2']) -> smtBigOr ([ lit v `Eq` fromNatural 0 | v <- Poly.monoVariables m] ++ [e1' `eq` e2'])
     _ -> e1 `eq` e2
     
 stack :: Solver s m => SolverM s m a -> SolverM s m a

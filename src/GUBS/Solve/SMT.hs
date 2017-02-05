@@ -1,4 +1,4 @@
-module GUBS.Solve.SMT ( smt, SMTSolver (..), PolyShape (..), SMTOpts (..), defaultSMTOpts ) where
+module GUBS.Solve.SMT ( smt, SMTSolver (..), PolyShape (..), Minimization (..), SMTOpts (..), defaultSMTOpts ) where
 
 import Data.List (subsequences,nub)
 import Control.Arrow (second)
@@ -36,13 +36,15 @@ type AbstractInterpretation s f = I.Interpretation f (AbstractCoefficient s)
 data PolyShape = Mixed | MultMixed
   deriving (Eq, Show)
 
+data Minimization = MinimizeFull | MinimizeIterate Int
+
 data SMTOpts =
   SMTOpts { shape    :: PolyShape
           , degree   :: Int 
           , maxCoeff :: Maybe Int
           , maxConst :: Maybe Int          
           , maxPoly  :: Bool
-          , minimize :: Bool }
+          , minimize :: Minimization }
 
 defaultSMTOpts :: SMTOpts
 defaultSMTOpts =
@@ -51,7 +53,7 @@ defaultSMTOpts =
           , maxCoeff = Nothing
           , maxConst = Nothing          
           , maxPoly  = True
-          , minimize = True}
+          , minimize = MinimizeFull }
 
 
 freshNat :: (Solver s m) => Maybe Int -> SolverM s m (AbstractCoefficient s)
@@ -158,26 +160,28 @@ solveM inter opts cs = do
         il <- interpret opts l
         ir <- interpret opts r
         let mcs = MP.maxElim (il :>=: ir)
-        cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
+        cs <- forM mcs $ \cc -> lift (condElim cc)
+        -- cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
         return (foldr ((++) . toCoefficientConstraints) ccs cs)
 
-      refine cconstrs ainter
-        | not (minimize opts) = fromAssignment ainter 
-        | otherwise           = fromAssignment ainter >>= minimizeCoeffs 5
+      refine cconstrs ainter = fromAssignment ainter >>= minimizeCoeffs (minimize opts)
         where
-          minimizeCoeffs 0 inter = return inter
-          minimizeCoeffs n inter = do
+          minimizeCoeffs (MinimizeIterate n) inter | n <= 0 = return inter
+          minimizeCoeffs mo inter = do
+            lift (logMsg ("minimizing"))
             bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) coeff <$> evalM coeff | (coeff :>=: _) <- cconstrs ]
             if null bs
-              then return inter
+              then lift (logMsg ("null")) >> return inter
               else do
+              lift (logMsg ("candidates:" ++ show (length bs))) >> return inter
               assert (smtBigAnd [ fromNatural b     `smtGeq` coeff | (coeff,b) <- bs ])
               assert (smtBigOr  [ fromNatural (b-1) `smtGeq` coeff | (coeff,b) <- bs ])
               sat <- checkSat
               if sat
-                then fromAssignment ainter >>= minimizeCoeffs (n-1)
+                then fromAssignment ainter >>= minimizeCoeffs (pred mo)
                 else return inter
-          
+                where pred MinimizeFull = MinimizeFull
+                      pred (MinimizeIterate i) = MinimizeIterate (i - 1)
         -- vs = nub (concatMap P.variables coeffs)
         -- setZero inter = do
         --   vs' <- filterM (getValue >=> \ w -> return (w > 0)) vs

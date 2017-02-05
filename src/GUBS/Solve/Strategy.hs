@@ -113,7 +113,7 @@ p1 <=> p2 = \cs -> do
 p1 ==> p2 = \cs -> do 
   r <- p1 cs
   case r of
-    Progress [] -> return (Progress [])
+    -- Progress [] -> return (Progress [])
     Progress cs' -> p2 cs'
     NoProgress -> return NoProgress
 
