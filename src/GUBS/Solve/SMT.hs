@@ -160,20 +160,20 @@ solveM inter opts cs = do
         il <- interpret opts l
         ir <- interpret opts r
         let mcs = MP.maxElim (il :>=: ir)
-        cs <- forM mcs $ \cc -> lift (condElim cc)
-        -- cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
+        -- cs <- forM mcs $ \cc -> lift (condElim cc)
+        lift (lift (logMsg (il :>=: ir)))
+        cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
         return (foldr ((++) . toCoefficientConstraints) ccs cs)
 
       refine cconstrs ainter = fromAssignment ainter >>= minimizeCoeffs (minimize opts)
         where
           minimizeCoeffs (MinimizeIterate n) inter | n <= 0 = return inter
           minimizeCoeffs mo inter = do
-            lift (logMsg ("minimizing"))
             bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) coeff <$> evalM coeff | (coeff :>=: _) <- cconstrs ]
             if null bs
-              then lift (logMsg ("null")) >> return inter
+              then return inter
               else do
-              lift (logMsg ("candidates:" ++ show (length bs))) >> return inter
+              lift (logMsg ("minimizing " ++ show (length bs) ++ " candidates.."))
               assert (smtBigAnd [ fromNatural b     `smtGeq` coeff | (coeff,b) <- bs ])
               assert (smtBigOr  [ fromNatural (b-1) `smtGeq` coeff | (coeff,b) <- bs ])
               sat <- checkSat

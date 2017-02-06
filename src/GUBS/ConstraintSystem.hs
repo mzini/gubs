@@ -23,6 +23,10 @@ type ConstraintSystem f v = [TermConstraint f v]
 funs :: Eq f => TermConstraint f v -> [(f,Int)]
 funs c = nub (T.funsDL (C.lhs c) (T.funsDL (C.rhs c) []))
 
+funsCS :: Eq f => ConstraintSystem f v -> [(f,Int)]
+funsCS = nub . foldr funsC [] where
+  funsC c = T.funsDL (C.lhs c) . T.funsDL (C.rhs c)
+  
 lhss,rhss :: ConstraintSystem f v -> [T.Term f v]
 lhss = map C.lhs
 rhss = map C.rhs

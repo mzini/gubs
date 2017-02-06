@@ -107,7 +107,7 @@ maxElim ieq = walk [([],ieq)] where
       
 -- pretty printing
 
-simp :: (Eq c, Eq v, IsNat c, SemiRing c, Max c) => MaxPoly v c -> MaxPoly v c
+simp :: (Eq c, Eq v, IsNat c, SemiRing c) => MaxPoly v c -> MaxPoly v c
 simp = simp' where
   simp' (Var v)      = Var v  
   simp' (Const i)    = Const i
@@ -137,7 +137,7 @@ simp = simp' where
   
   
 
-instance (Eq c, Eq v, IsNat c, SemiRing c, Max c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
+instance (Eq c, Eq v, IsNat c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
   pretty = pp id . simp where
     pp _   (Var v)      = PP.pretty v
     pp _   (Const i)    = PP.pretty i

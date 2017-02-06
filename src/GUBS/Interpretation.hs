@@ -41,6 +41,9 @@ union (Inter m1) (Inter m2) = Inter (m1 `M.union` m2)
 unions :: Ord f => [Interpretation f c] -> Interpretation f c
 unions = foldl' union empty 
 
+restrict :: Ord f => (f -> Int -> Bool) -> Interpretation f c -> Interpretation f c
+restrict p (Inter m) = Inter (M.filterWithKey (\(f,i) _ -> p f i) m)
+
 apply :: (SemiRing c, Ord v) => P.MaxPoly Var c -> [P.MaxPoly v c] -> P.MaxPoly v c
 apply p args = P.substitute s p where
   s (V i) | i < length args = args !! i

@@ -32,6 +32,8 @@ import           GUBS.Algebra
 import           GUBS.Interpretation hiding (get)
 import           GUBS.Constraint
 import           GUBS.ConstraintSystem
+import qualified GUBS.Polynomial as P
+import qualified GUBS.Interpretation as I
 
 type ExecutionLog = Forest String
                            
@@ -51,13 +53,16 @@ modifyInterpretation :: Monad m => (Interpretation f c -> Interpretation f c) ->
 modifyInterpretation = modify
 
 
-logInterpretation :: (Eq c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ProcT f c m ()
-logInterpretation = getInterpretation >>= \ i -> logMsg (PP.text "Interpretation" PP.<$> PP.pretty i)
-    -- fmap toList getInterpretation >>= mapM logBinding where
-  -- logBinding ((f,i),p) = 
-  --   logMsg (PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- take Poly.variables p]))
-  --           PP.<+> PP.text "=" PP.<+> PP.pretty p)
-    
+logInterpretation :: (Eq c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logInterpretation cs =
+  logBlk "Interpretation" $ fmap toList getInterpretation >>= mapM_ logBinding
+  where
+    fs = funsCS cs
+    ppArgs i = PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- take i I.variables]))    
+    logBinding ((f,i),p)
+      | (f,i) `elem` fs = logMsg (PP.pretty f PP.<> ppArgs i PP.<+> PP.text "=" PP.<+> PP.pretty p)
+      | otherwise       = return ()
+ 
 logConstraints' :: (Multiplicative c, Max c, IsNat c, Integral c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logConstraints'  cs = do
     i <- getInterpretation
@@ -113,7 +118,7 @@ p1 <=> p2 = \cs -> do
 p1 ==> p2 = \cs -> do 
   r <- p1 cs
   case r of
-    -- Progress [] -> return (Progress [])
+    Progress [] -> return (Progress [])
     Progress cs' -> p2 cs'
     NoProgress -> return NoProgress
 

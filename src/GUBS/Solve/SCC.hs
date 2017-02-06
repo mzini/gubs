@@ -15,7 +15,7 @@ sccDecompose p cs =
     [] -> return NoProgress
     (scc:sccs) -> do
       logMsg ("SCC:" ++ show (length sccs + 1) ++ " SCCs")
-      toResult sccs <$> (p scc <* logInterpretation <* logConstraints scc)
+      toResult sccs <$> p scc
   where
     toResult sccs (Progress []) = Progress (concat sccs)
     toResult _    _             = NoProgress
