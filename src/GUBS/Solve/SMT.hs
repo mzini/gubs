@@ -1,10 +1,11 @@
 module GUBS.Solve.SMT ( smt, SMTSolver (..), PolyShape (..), Minimization (..), SMTOpts (..), defaultSMTOpts ) where
 
 import Data.List (subsequences,nub)
+import Data.Foldable (toList)
 import Control.Arrow (second)
 import Control.Monad (forM, foldM, forM_, liftM, when, unless, filterM, (>=>), replicateM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State (StateT, runStateT, get, modify)
+import Control.Monad.State (StateT, execStateT, get, modify)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trace
 
@@ -21,6 +22,7 @@ import           GUBS.ConstraintSystem (ConstraintSystem)
 import           GUBS.Solve.Strategy
 import           GUBS.Solver hiding (SMTSolver)
 import qualified GUBS.Solver.Class as SMT
+import qualified GUBS.Solver.Formula as F
 
 -- TODO remove
 import GUBS.Utils (tracePretty)
@@ -99,16 +101,36 @@ interpret opts = T.interpretM (return . MP.variable) i where
         modify (\ ainter -> I.insert ainter f ar p)
         return p
 
-condElim :: (Ord v, Solver s m) => ConditionalConstraint (AbstractPoly s v) -> SolverM s m (Constraint (AbstractPoly s v))
-condElim CC { .. }
-  | null premises = return constraint
-  | otherwise = do
-      eliminateCond constraint <$> replicateM (length premises) (freshNat (Just 1))
-        where
-          eliminateCond (p :>=: q) cs = l :>=: r where
-            -- heuristic from Maximal Termination Paper, footnote 15
-            l = p .+ sumA [ P.coefficient ci .* qi | (ci,_ :>=: qi) <- zip cs premises]
-            r = q .+ sumA [ P.coefficient ci .* pi | (ci,pi :>=: _) <- zip cs premises]
+maxElim :: (Ord v, IsNat c, SemiRing c) => Constraint (MP.MaxPoly v c) -> Formula (P.Polynomial v c)
+maxElim = smtBigAnd . map elimLhs . elimRhs
+  where
+    elimRhs (l :>=: r) = [ l :>=: r' | r' <- split r ] where
+       
+    elimLhs (l :>=: r) = smtBigOr [ Atom (toPoly l' `Geq` toPoly r) | l' <- split l ]
+
+    toPoly (MP.Var v)    = P.variable v
+    toPoly (MP.Const c)  = P.coefficient c
+    toPoly (MP.Plus p q) = toPoly p .+ toPoly q
+    toPoly (MP.Mult p q) = toPoly p .* toPoly q
+    toPoly (MP.Max {})     = error "SMT.maxElim: polynomial still contains max"
+    
+    split (MP.Var v)    = [MP.variable v]
+    split (MP.Const c)  = [MP.constant c]
+    split (MP.Plus p q) = (.+) <$> split p <*> split q
+    split (MP.Mult p q) = (.*) <$> split p <*> split q
+    split (MP.Max p q)  = split p ++ split q
+
+  
+-- condElim :: (Ord v, Solver s m) => ConditionalConstraint (AbstractPoly s v) -> SolverM s m (Constraint (AbstractPoly s v))
+-- condElim CC { .. }
+--   | null premises = return constraint
+--   | otherwise = do
+--       eliminateCond constraint <$> replicateM (length premises) (freshNat (Just 1))
+--         where
+--           eliminateCond (p :>=: q) cs = l :>=: r where
+--             -- heuristic from Maximal Termination Paper, footnote 15
+--             l = p .+ sumA [ P.coefficient ci .* qi | (ci,_ :>=: qi) <- zip cs premises]
+--             r = q .+ sumA [ P.coefficient ci .* pi | (ci,pi :>=: _) <- zip cs premises]
                                            
 
 data AbstractCoefficientDiff s =
@@ -143,53 +165,82 @@ fromAssignment = traverse evalM
 
 solveM :: (PP.Pretty v, PP.Pretty (Literal s), Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter opts cs = do
-  (cconstrs,ainter) <- flip runStateT (I.mapInter (fmap fromNatural) inter) $
-    foldM collectCoefficientConstraints [] cs
-  assert (smtBigAnd [ p `smtGeq` n | p :>=: n <- cconstrs])
-  sat <- checkSat  
-  if sat
-    then Just <$> refine cconstrs ainter
-    else return Nothing
+  let inter' = I.mapInter (fmap fromNatural) inter
+  ainter <- flip execStateT inter' $ 
+    forM_ cs $ \ (l :>=: r) -> do
+      c <- (:>=:) <$> interpret opts l <*> interpret opts r
+      lift $ assert (F.subst dio (maxElim c))
+  ifM checkSat (Just <$> minimizeCoeffs (minimize opts) ainter) (return Nothing)
+  where
+    dio (Geq l r) = smtBigAnd [ (posAC p `smtGeq` negAC p)
+                              | p <- P.coefficients (toDiffPoly l .- toDiffPoly r)]
 
-    where
-      toCoefficientConstraints (il' :>=: ir') =
-        [ (posAC p :>=: negAC p) | p <- P.coefficients (toDiffPoly il' .- toDiffPoly ir') ]      
+    minimizeCoeffs (MinimizeIterate n) ainter | n <= 0 = fromAssignment ainter
+    minimizeCoeffs mo ainter = do
+      inter <- fromAssignment ainter
+      bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) c <$> evalM c | c <- cs ]
+      if null bs
+        then fromAssignment ainter
+        else do
+        lift (logMsg ("minimizing " ++ show (length bs) ++ " candidates..."))
+        let c1 = fromNatural (sum [ b | (_,b) <- bs ] - 1) `smtGeq` sumA [ c | (c,_) <- bs ] 
+        assert (c1)
+        ifM checkSat (minimizeCoeffs (pred mo) ainter) (return inter)
+      where
+        d = I.domain inter
+        ps = [ p | (fi,p) <- I.toList ainter, fi `notElem` d]
+        cs = concatMap toList ps
+        pred MinimizeFull = MinimizeFull
+        pred (MinimizeIterate i) = MinimizeIterate (i - 1)      
       
-      collectCoefficientConstraints ccs (l :>=: r) = do
-        il <- interpret opts l
-        ir <- interpret opts r
-        let mcs = MP.maxElim (il :>=: ir)
-        -- cs <- forM mcs $ \cc -> lift (condElim cc)
-        lift (lift (logMsg (il :>=: ir)))
-        cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
-        return (foldr ((++) . toCoefficientConstraints) ccs cs)
+  -- do
+  -- (cconstrs,ainter) <- flip runStateT (I.mapInter (fmap fromNatural) inter) $
+  --   foldM collectCoefficientConstraints [] cs
+  -- assert (smtBigAnd [ p `smtGeq` n | p :>=: n <- cconstrs])
+  -- sat <- checkSat  
+  -- if sat
+  --   then Just <$> refine cconstrs ainter
+  --   else return Nothing
 
-      refine cconstrs ainter = fromAssignment ainter >>= minimizeCoeffs (minimize opts)
-        where
-          minimizeCoeffs (MinimizeIterate n) inter | n <= 0 = return inter
-          minimizeCoeffs mo inter = do
-            bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) coeff <$> evalM coeff | (coeff :>=: _) <- cconstrs ]
-            if null bs
-              then return inter
-              else do
-              lift (logMsg ("minimizing " ++ show (length bs) ++ " candidates.."))
-              assert (smtBigAnd [ fromNatural b     `smtGeq` coeff | (coeff,b) <- bs ])
-              assert (smtBigOr  [ fromNatural (b-1) `smtGeq` coeff | (coeff,b) <- bs ])
-              sat <- checkSat
-              if sat
-                then fromAssignment ainter >>= minimizeCoeffs (pred mo)
-                else return inter
-                where pred MinimizeFull = MinimizeFull
-                      pred (MinimizeIterate i) = MinimizeIterate (i - 1)
-        -- vs = nub (concatMap P.variables coeffs)
-        -- setZero inter = do
-        --   vs' <- filterM (getValue >=> \ w -> return (w > 0)) vs
-        --   push
-        --   assert [ EQC (lit v) 0 | v <- vs']
-        --   sat <- checkSat
-        --   if sat
-        --    then fromAssignment ainter >>= setZero
-        --    else pop >> return inter
+  --   where
+  --     toCoefficientConstraints (il' :>=: ir') =
+  --       [ (posAC p :>=: negAC p) | p <- P.coefficients (toDiffPoly il' .- toDiffPoly ir') ]      
+      
+  --     collectCoefficientConstraints ccs (l :>=: r) = do
+  --       il <- interpret opts l
+  --       ir <- interpret opts r
+  --       let mcs = MP.maxElim (il :>=: ir)
+  --       -- cs <- forM mcs $ \cc -> lift (condElim cc)
+  --       lift (lift (logMsg (il :>=: ir)))
+  --       cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
+  --       return (foldr ((++) . toCoefficientConstraints) ccs cs)
+
+  --     refine cconstrs ainter = fromAssignment ainter >>= minimizeCoeffs (minimize opts)
+  --       where
+  --         minimizeCoeffs (MinimizeIterate n) inter | n <= 0 = return inter
+  --         minimizeCoeffs mo inter = do
+  --           bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) coeff <$> evalM coeff | (coeff :>=: _) <- cconstrs ]
+  --           if null bs
+  --             then return inter
+  --             else do
+  --             lift (logMsg ("minimizing " ++ show (length bs) ++ " candidates.."))
+  --             assert (smtBigAnd [ fromNatural b     `smtGeq` coeff | (coeff,b) <- bs ])
+  --             assert (smtBigOr  [ fromNatural (b-1) `smtGeq` coeff | (coeff,b) <- bs ])
+  --             sat <- checkSat
+  --             if sat
+  --               then fromAssignment ainter >>= minimizeCoeffs (pred mo)
+  --               else return inter
+  --               where pred MinimizeFull = MinimizeFull
+  --                     pred (MinimizeIterate i) = MinimizeIterate (i - 1)
+  --       -- vs = nub (concatMap P.variables coeffs)
+  --       -- setZero inter = do
+  --       --   vs' <- filterM (getValue >=> \ w -> return (w > 0)) vs
+  --       --   push
+  --       --   assert [ EQC (lit v) 0 | v <- vs']
+  --       --   sat <- checkSat
+  --       --   if sat
+  --       --    then fromAssignment ainter >>= setZero
+  --       --    else pop >> return inter
              
       
          

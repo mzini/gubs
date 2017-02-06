@@ -65,8 +65,7 @@ popFrame st =
 
 addConstraint :: Formula (Exp MiniSMT) -> SolverState -> SolverState
 addConstraint c st@SolverState{..} =
-  st { curFrame = curFrame { fConstraints = c : fConstraints curFrame }
-     , assign = Nothing } -- TODO: maybe check satisfiability of c and keep
+  st { curFrame = curFrame { fConstraints = c : fConstraints curFrame }}
 
 
 

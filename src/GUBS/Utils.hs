@@ -44,3 +44,6 @@ logBlk = MTR.scopeTrace . renderPretty
 whenJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
 whenJust (Just a) m = m a
 whenJust _        _ = pure ()
+
+ifM :: Monad m => m Bool -> m a -> m a -> m a
+ifM g t e = do {b <- g; if b then t else e}
