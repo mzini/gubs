@@ -27,17 +27,13 @@ instance Multiplicative (Exp SMTLibSolver) where
 liftSMT :: SMT.SMT' m a -> SolverM SMTLibSolver m a
 liftSMT = SMT
 
-toSMTFormula :: Formula SMTLibSolver -> SMTI.SMTExpr Bool
+toSMTFormula :: Formula (Exp SMTLibSolver) -> SMTI.SMTExpr Bool
 toSMTFormula f =
   case f of
     Top -> SMT.constant True
     Bot -> SMT.constant False
-    Geq (Exp l) (Exp r) -> l SMT..>=. r
-    Eq (Exp l) (Exp r) ->  l SMT..==. r
-    Not f -> SMT.not' (toSMTFormula f)
-    Iff f1 f2 -> toSMTFormula (And (Imp f1 f2) (Imp f2 f1))
-    Imp f1 f2 -> toSMTFormula f1 SMT..=>. toSMTFormula f2
-    Ite f1 f2 f3 -> SMT.ite (toSMTFormula f1) (toSMTFormula f2) (toSMTFormula f3)
+    Atom (Geq (Exp l) (Exp r)) -> l SMT..>=. r
+    Atom (Eq (Exp l) (Exp r)) ->  l SMT..==. r
     And f1 f2 -> app SMT.and' [f1,f2]
     Or f1 f2 -> app SMT.or' [f1,f2]
   where app op fs = SMT.app op (map toSMTFormula fs)

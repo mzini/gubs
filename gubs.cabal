@@ -25,6 +25,7 @@ library
                    GUBS.Solve.Simplify                                      
                    GUBS.Solver                               
                    GUBS.Solver.Class
+                   GUBS.Solver.Formula                   
                    GUBS.Solver.SMTLib
                    GUBS.Solver.MiniSMT
                    GUBS.Utils

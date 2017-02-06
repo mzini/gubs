@@ -99,7 +99,6 @@ interpret opts = T.interpretM (return . MP.variable) i where
         modify (\ ainter -> I.insert ainter f ar p)
         return p
 
-
 condElim :: (Ord v, Solver s m) => ConditionalConstraint (AbstractPoly s v) -> SolverM s m (Constraint (AbstractPoly s v))
 condElim CC { .. }
   | null premises = return constraint

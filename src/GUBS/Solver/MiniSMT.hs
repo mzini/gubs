@@ -39,7 +39,7 @@ lookup s a = fromMaybe 0 (Map.lookup s a)
 
           
 data Frame = Frame { fFreeVars :: Set Symbol
-                   , fConstraints :: [Formula MiniSMT]}
+                   , fConstraints :: [Formula (Exp MiniSMT)]}
 
 data SolverState = SolverState { freshId    :: Int
                                , assign     :: Maybe Assign
@@ -49,7 +49,7 @@ data SolverState = SolverState { freshId    :: Int
 freeVars :: SolverState -> [Symbol]
 freeVars = Set.toList . fFreeVars . curFrame
 
-constraints :: SolverState -> [Formula MiniSMT]
+constraints :: SolverState -> [Formula (Exp MiniSMT)]
 constraints st = concatMap fConstraints (curFrame st : frameStack st)
 
 pushFrame :: SolverState -> SolverState
@@ -63,7 +63,7 @@ popFrame st =
     [] -> error "MiniSMT: pop on empty stack"
     f:fs -> st { curFrame = f, frameStack = fs }
 
-addConstraint :: Formula MiniSMT -> SolverState -> SolverState
+addConstraint :: Formula (Exp MiniSMT) -> SolverState -> SolverState
 addConstraint c st@SolverState{..} =
   st { curFrame = curFrame { fConstraints = c : fConstraints curFrame }
      , assign = Nothing } -- TODO: maybe check satisfiability of c and keep
@@ -104,7 +104,7 @@ sexpr es = charBS '(' <> hsep es <> charBS ')'
 app :: String -> [BS.Builder] -> BS.Builder
 app f es = sexpr (stringBS f : es)
   
-toScript :: [Symbol] -> [Formula MiniSMT] -> BS.Builder
+toScript :: [Symbol] -> [Formula (Exp MiniSMT)] -> BS.Builder
 toScript vs cs =
   app "set-logic" [stringBS "QF_NIA"]
   </> vsep [ app "declare-fun" [stringBS (show (Lit v)), sexpr [], stringBS "Nat"]
@@ -114,12 +114,8 @@ toScript vs cs =
   where
     formToBS Top           = stringBS "true"
     formToBS Bot           = stringBS "false"
-    formToBS (Not f)       = app "not" [ formToBS f ]
-    formToBS (Eq e1 e2)    = app "=" [ expressionToBS e1, expressionToBS e2 ]
-    formToBS (Geq e1 e2)   = app ">=" [ expressionToBS e1, expressionToBS e2 ]
-    formToBS (Iff f1 f2)   = app "iff" [ formToBS f1, formToBS f2 ]
-    formToBS (Imp f1 f2)   = formToBS (Or (Not f1) f2)
-    formToBS (Ite g f1 f2) = formToBS (Or (And g f1) (And (Not g) f2))
+    formToBS (Atom (Eq e1 e2))  = app "=" [ expressionToBS e1, expressionToBS e2 ]
+    formToBS (Atom (Geq e1 e2)) = app ">=" [ expressionToBS e1, expressionToBS e2 ]
     formToBS (And f1 f2)   = app "and" [ formToBS f1, formToBS f2 ]
     formToBS (Or f1 f2)    = app "or" [ formToBS f1, formToBS f2 ]    
 
@@ -152,7 +148,7 @@ parseOut out =
 
 -- minismt wrapper
 ----------------------------------------------------------------------
-runMiniSMT :: (MonadTrace String m, MonadIO m) => [Symbol] -> [Formula MiniSMT] -> m (Maybe Assign)
+runMiniSMT :: (MonadTrace String m, MonadIO m) => [Symbol] -> [Formula (Exp MiniSMT)] -> m (Maybe Assign)
 runMiniSMT vs cs = do
   let script = toScript vs cs
   logBlk "MiniSMT" (logMsg (ppScript script))
