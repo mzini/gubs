@@ -21,7 +21,7 @@ import           GUBS.Algebra
 import           GUBS.Solve.Strategy hiding (Abort(..))
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
-data Answer f v c = DontKnow | Open (ConstraintSystem f v) (Interpretation f c) | Sat (Interpretation f c) deriving (Show)
+data Answer f v c = Open (ConstraintSystem f v) (Interpretation f c) | Sat (Interpretation f c) deriving (Show)
 
 solveWith :: (Eq c, Integral c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>
   ConstraintSystem f v -> Processor f c v m -> m (Answer f v c, ExecutionLog)
@@ -42,4 +42,3 @@ interpretation _ = Nothing
 instance (PP.Pretty f, PP.Pretty c, Eq c, IsNat c, SemiRing c, Max c, PP.Pretty v) => PP.Pretty (Answer f v c) where
     pretty (Sat i) = PP.text "SUCCESS" PP.<$$> PP.pretty i
     pretty (Open cs i) = PP.text "OPEN" PP.<$$> PP.pretty cs PP.<$$> PP.pretty i
-    pretty DontKnow = PP.text "DONTKNOW"
