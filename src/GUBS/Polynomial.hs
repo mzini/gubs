@@ -153,3 +153,33 @@ instance (PP.Pretty c, IsNat c, Eq c, PP.Pretty v) => PP.Pretty (Polynomial v c)
     ppMono (c,mono) = PP.parens (PP.pretty c) PP.<> PP.char '*' PP.<> PP.pretty mono
 
    
+
+
+data Diff c = Diff { posAC :: c , negAC :: c }
+
+toDiff :: Additive c => c -> Diff c
+toDiff c = Diff { posAC = c, negAC = zero }
+
+negateDiff :: Diff c -> Diff c
+negateDiff p = Diff { posAC = negAC p, negAC = posAC p}
+
+instance IsNat c => IsNat (Diff c) where
+  fromNatural_ n = Diff { posAC = fromNatural_ n, negAC = fromNatural 0 }
+
+instance Additive c => Additive (Diff c) where
+  zero = toDiff zero
+  d1 .+ d2 = Diff { posAC = posAC d1 .+ posAC d2, negAC = negAC d1 .+ negAC d2 }
+
+instance Additive c => AdditiveGroup (Diff c) where
+  neg = negateDiff
+
+type DiffPolynomial v c = Polynomial v (Diff c)
+
+toDiffPoly :: Additive c => Polynomial v c -> DiffPolynomial v c
+toDiffPoly = fmap toDiff 
+
+strictlyPositive :: DiffPolynomial v c -> [Constraint c]
+strictlyPositive p = [ posAC c :>=: negAC c | c <- coefficients p]
+ 
+minus :: (IsNat c, Additive c, Ord v) => Polynomial v c -> Polynomial v c -> DiffPolynomial v c
+p1 `minus` p2 = toDiffPoly p1 .- toDiffPoly p2 

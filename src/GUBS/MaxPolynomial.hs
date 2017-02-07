@@ -1,5 +1,6 @@
 module GUBS.MaxPolynomial where
 
+import Data.List (nub)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import Data.Foldable (toList)
 
@@ -34,19 +35,30 @@ variables (Max p q)  = variables p ++ variables q
 coefficients :: MaxPoly v c -> [c]
 coefficients = toList
 
+
 instance IsNat c => IsNat (MaxPoly v c) where
   fromNatural_ = Const . fromNatural
   
-instance Additive c => Additive (MaxPoly v c) where
+instance (Eq c, Additive c) => Additive (MaxPoly v c) where
   zero = Const zero
-  t1 .+ t2 = Plus t1 t2
+  Const i .+ t2      | zero == i = t2
+  t1      .+ Const j | zero == j = t1
+  Const i .+ Const j             = Const (i .+ j)
+  t1 .+ t2                       = Plus t1 t2
 
-instance Additive c => Max (MaxPoly v c) where
-  t1 `maxA` t2 = Max t1 t2
+instance (Eq c, Additive c) => Max (MaxPoly v c) where
+  Const i `maxA` t2      | zero == i = t2
+  t1      `maxA` Const j | zero == j = t1
+  t1      `maxA` t2                  = Max t1 t2
   
-instance Multiplicative c => Multiplicative (MaxPoly v c) where
+instance (Eq c, Additive c, Multiplicative c) => Multiplicative (MaxPoly v c) where
   one = Const one
-  t1 .* t2 = Mult t1 t2
+  Const i .* t2      | zero == i = zero
+                     | one == i  = t2
+  t1      .* Const j | zero == j = zero
+                     | one == j  = t1
+  Const i .* Const j             = Const (i .* j)
+  t1 .* t2                       = Mult t1 t2
 
 -- operations
 
@@ -64,7 +76,7 @@ fromMaxPoly var con (Plus p q) = fromMaxPoly var con p .+ fromMaxPoly var con q
 fromMaxPoly var con (Mult p q) = fromMaxPoly var con p .* fromMaxPoly var con q
 fromMaxPoly var con (Max p q)  = fromMaxPoly var con p `maxA` fromMaxPoly var con q
 
-substitute :: SemiRing c => (v -> MaxPoly v' c) -> MaxPoly v c -> MaxPoly v' c
+substitute :: (Eq c, SemiRing c) => (v -> MaxPoly v' c) -> MaxPoly v c -> MaxPoly v' c
 substitute s (Var v)    = s v
 substitute s (Const c)  = Const c
 substitute s (Plus p q) = substitute s p .+ substitute s q
@@ -73,78 +85,67 @@ substitute s (Max p q)  = substitute s p `maxA` substitute s q
   
 -- * max elimination
 
-maxElim :: (Ord v, Eq c, IsNat c, SemiRing c) => Constraint (MaxPoly v c) -> [ConditionalConstraint (P.Polynomial v c)]
-maxElim ieq = walk [([],ieq)] where
-  walk [] = []
-  walk ((ps,ieq):ceqs) =
-    case splitIEQ ieq of
-      Nothing -> CC { premises = ps, constraint = fmap toPoly ieq } : walk ceqs
-      Just (p,q,ctx) -> walk (cp:cq:ceqs)
-        where
-          p' = toPoly p
-          q' = toPoly q
-          cp = ((p' :>=: q')          : ps,ctx p)
-          cq = ((q' :>=: (p' .+ one)) : ps,ctx q)
+splitMax :: (Ord v, IsNat c, SemiRing c) =>  MaxPoly v c -> [P.Polynomial v c]
+splitMax (Var v)    = [P.variable v]
+splitMax (Const c)  = [P.coefficient c]
+splitMax (Plus p q) = (.+) <$> splitMax p <*> splitMax q
+splitMax (Mult p q) = (.*) <$> splitMax p <*> splitMax q
+splitMax (Max p q)  = splitMax p ++ splitMax q
+
+-- maxElim :: (Ord v, Eq c, IsNat c, SemiRing c) => Constraint (MaxPoly v c) -> [ConditionalConstraint (P.Polynomial v c)]
+-- maxElim ieq = walk [([],ieq)] where
+--   walk [] = []
+--   walk ((ps,ieq):ceqs) =
+--     case splitIEQ ieq of
+--       Nothing -> CC { premises = ps, constraint = fmap toPoly ieq } : walk ceqs
+--       Just (p,q,ctx) -> walk (cp:cq:ceqs)
+--         where
+--           p' = toPoly p
+--           q' = toPoly q
+--           cp = ((p' :>=: q')          : ps,ctx p)
+--           cq = ((q' :>=: (p' .+ one)) : ps,ctx q)
                       
-  toPoly (Var v)    = P.variable v
-  toPoly (Const c)  = P.coefficient c
-  toPoly (Plus p q) = toPoly p .+ toPoly q
-  toPoly (Mult p q) = toPoly p .* toPoly q
-  toPoly (Max {})     = error "maxElim: polynomial still contains max"
+--   toPoly (Var v)    = P.variable v
+--   toPoly (Const c)  = P.coefficient c
+--   toPoly (Plus p q) = toPoly p .+ toPoly q
+--   toPoly (Mult p q) = toPoly p .* toPoly q
+--   toPoly (Max {})     = error "maxElim: polynomial still contains max"
   
-  splitIEQ (p1 :>=: p2) =
-    case (splitMaxPoly p1, splitMaxPoly p2) of
-      (Right (p,q,ctx), _              ) -> Just (p,q, \pi -> ctx pi :>=: p2)
-      (_              , Right (p,q,ctx)) -> Just (p,q, \pi -> p1 :>=: ctx pi)    
-      (_              , _              ) -> Nothing
-  splitBinOp c p1 p2 = 
-    case (splitMaxPoly p1, splitMaxPoly p2) of
-      (Right (p1',p2',ctx), _                  ) -> Right (p1',p2', \ pi' -> c (ctx pi') p2)
-      (_                  , Right (p1',p2',ctx)) -> Right (p1',p2', \ pi' -> c p1 (ctx pi'))
-      (_                  , _                  ) -> Left (c p1 p2)
-  splitMaxPoly p@(Var _) = Left p
-  splitMaxPoly p@(Const _) = Left p
-  splitMaxPoly (Max p1 p2)  =
-    case splitBinOp Max p1 p2 of {Left _ -> Right (p1, p2, id); s -> s}
-  splitMaxPoly (Plus p1 p2) = splitBinOp Plus p1 p2
-  splitMaxPoly (Mult p1 p2) = splitBinOp Mult p1 p2  
+--   splitIEQ (p1 :>=: p2) =
+--     case (splitMaxPoly p1, splitMaxPoly p2) of
+--       (Right (p,q,ctx), _              ) -> Just (p,q, \pi -> ctx pi :>=: p2)
+--       (_              , Right (p,q,ctx)) -> Just (p,q, \pi -> p1 :>=: ctx pi)    
+--       (_              , _              ) -> Nothing
+--   splitBinOp c p1 p2 = 
+--     case (splitMaxPoly p1, splitMaxPoly p2) of
+--       (Right (p1',p2',ctx), _                  ) -> Right (p1',p2', \ pi' -> c (ctx pi') p2)
+--       (_                  , Right (p1',p2',ctx)) -> Right (p1',p2', \ pi' -> c p1 (ctx pi'))
+--       (_                  , _                  ) -> Left (c p1 p2)
+--   splitMaxPoly p@(Var _) = Left p
+--   splitMaxPoly p@(Const _) = Left p
+--   splitMaxPoly (Max p1 p2)  =
+--     case splitBinOp Max p1 p2 of {Left _ -> Right (p1, p2, id); s -> s}
+--   splitMaxPoly (Plus p1 p2) = splitBinOp Plus p1 p2
+--   splitMaxPoly (Mult p1 p2) = splitBinOp Mult p1 p2  
       
 -- pretty printing
 
-simp :: (Eq c, Eq v, IsNat c, SemiRing c) => MaxPoly v c -> MaxPoly v c
-simp = simp' where
-  simp' (Var v)      = Var v  
-  simp' (Const i)    = Const i
-  simp' (Mult t1 t2) = simp' t1 `mult` simp' t2
-  simp' (Plus t1 t2) = simp' t1 `plus` simp' t2
-  simp' (Max t1 t2)  = simp' t1 `max` simp' t2
+simp :: (Ord c, Ord v, IsNat c, SemiRing c) => MaxPoly v c -> MaxPoly v c
+simp = fromPolyList . filterSubsumed . nub . splitMax where
+  fromPolyList [] = zero
+  fromPolyList ps = maximumA (map fromPoly ps)
 
-  Const i `mult` t2
-    | fromNatural 0 == i = Const (fromNatural 0)
-    | fromNatural 1 == i = t2
-  t1      `mult` Const i
-    | fromNatural 0 == i = Const (fromNatural 0)
-    | fromNatural 1 == i = t1
-  Const i `mult` Const j = Const (i .* j)  
-  t1      `mult` t2      = t1 `Mult` t2
+  fromPoly = P.fromPolynomial variable constant
 
-  Const i `plus` t2      | fromNatural 0 == i = t2
-  t1      `plus` Const i | fromNatural 0 == i = t1
-  Const i `plus` Const j = Const (i .+ j)  
-  t1      `plus` t2      = t1 `Plus` t2
+  filterSubsumed ps = foldr (\ p -> filter (subsumes p)) ps ps
+  p1 `subsumes` p2 =
+    and [ c1 >= c2 | (c1 :>=: c2) <- P.strictlyPositive (p1 `P.minus` p2)]
 
-  Const i `max` t2       | fromNatural 0 == i = t2
-  t1      `max` Const i  | fromNatural 0 == i = t1  
-  t1      `max` t2       | t1 == t2           = t1
-                         | otherwise          = t1 `Max` t2
-
-  
-  
-
-instance (Eq c, Eq v, IsNat c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
-  pretty = pp id where -- TODO  . simp
+instance (Eq c, Eq v, IsNat c, Max c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
+  pretty = pp id where
     pp _   (Var v)      = PP.pretty v
     pp _   (Const i)    = PP.pretty i
-    pp par (Mult t1 t2) = ppBin par "*" t1 t2
-    pp par (Plus t1 t2) = ppBin par "+" t1 t2
+    pp par (Mult t1 t2) = ppBin par "*" (pp PP.parens t1) (pp PP.parens t2)
+    pp par (Plus t1 t2) = ppBin par "+" (PP.pretty t1) (PP.pretty t2)
     pp par (Max t1 t2)  = par (PP.text "max" PP.<> PP.tupled [PP.pretty t1, PP.pretty t2])
+

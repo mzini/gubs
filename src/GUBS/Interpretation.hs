@@ -47,7 +47,7 @@ unions = foldl' union empty
 restrict :: Ord f => (f -> Int -> Bool) -> Interpretation f c -> Interpretation f c
 restrict p (Inter m) = Inter (M.filterWithKey (\(f,i) _ -> p f i) m)
 
-apply :: (SemiRing c, Ord v) => P.MaxPoly Var c -> [P.MaxPoly v c] -> P.MaxPoly v c
+apply :: (Eq c, SemiRing c, Ord v) => P.MaxPoly Var c -> [P.MaxPoly v c] -> P.MaxPoly v c
 apply p args = P.substitute s p where
   s (V i) | i < length args = args !! i
           | otherwise       = error "Interpretation.apply: insufficient arguments"
@@ -61,7 +61,7 @@ toList (Inter m) = M.toList m
 mapInter :: (P.MaxPoly Var c -> P.MaxPoly Var c') -> Interpretation f c -> Interpretation f c'
 mapInter f (Inter m) = Inter (M.map f m)
 
-interpret :: (Ord f, Ord v, Max c, SemiRing c, IsNat c) => Interpretation f c -> Term f v -> Maybe (P.MaxPoly v c)
+interpret :: (Ord f, Ord v, Eq c, Max c, SemiRing c, IsNat c) => Interpretation f c -> Term f v -> Maybe (P.MaxPoly v c)
 interpret i = T.interpretM (return . P.variable) im where
   im f as = apply <$> get i f (length as) <*> return as
 

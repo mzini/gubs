@@ -55,7 +55,7 @@ groupWith f = groupBy (\eq1 eq2 -> f eq1 == f eq2) . sortBy (compare `on` f)
 --              where ar = length ts                 
 --   propagate _ c = return (Left c)
 
-substitute :: (SemiRing c, Eq v) => [(v,MP.MaxPoly v' c)] -> MP.MaxPoly v c -> MP.MaxPoly v' c
+substitute :: (Eq c, SemiRing c, Eq v) => [(v,MP.MaxPoly v' c)] -> MP.MaxPoly v c -> MP.MaxPoly v' c
 substitute s = MP.substitute s' where
   s' v = case lookup v s of
     Nothing -> undefined -- MP.variable v

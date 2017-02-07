@@ -106,23 +106,10 @@ interpret opts = T.interpretM (return . MP.variable) i where
 maxElim :: (Ord v, IsNat c, SemiRing c) => Constraint (MP.MaxPoly v c) -> Formula (P.Polynomial v c)
 maxElim = smtBigAnd . map elimLhs . elimRhs
   where
-    elimRhs (l :>=: r) = [ l :>=: r' | r' <- split r ] where
-       
-    elimLhs (l :>=: r) = smtBigOr [ Atom (toPoly l' `Geq` toPoly r) | l' <- split l ]
+    elimRhs (l :>=: r) = [ (l,r') | r' <- MP.splitMax r ]
+    elimLhs (l,r) = smtBigOr [ Atom (l' `Geq` r) | l' <- MP.splitMax l ]
 
-    toPoly (MP.Var v)    = P.variable v
-    toPoly (MP.Const c)  = P.coefficient c
-    toPoly (MP.Plus p q) = toPoly p .+ toPoly q
-    toPoly (MP.Mult p q) = toPoly p .* toPoly q
-    toPoly (MP.Max {})     = error "SMT.maxElim: polynomial still contains max"
     
-    split (MP.Var v)    = [MP.variable v]
-    split (MP.Const c)  = [MP.constant c]
-    split (MP.Plus p q) = (.+) <$> split p <*> split q
-    split (MP.Mult p q) = (.*) <$> split p <*> split q
-    split (MP.Max p q)  = split p ++ split q
-
-  
 -- condElim :: (Ord v, Solver s m) => ConditionalConstraint (AbstractPoly s v) -> SolverM s m (Constraint (AbstractPoly s v))
 -- condElim CC { .. }
 --   | null premises = return constraint
@@ -133,37 +120,10 @@ maxElim = smtBigAnd . map elimLhs . elimRhs
 --             -- heuristic from Maximal Termination Paper, footnote 15
 --             l = p .+ sumA [ P.coefficient ci .* qi | (ci,_ :>=: qi) <- zip cs premises]
 --             r = q .+ sumA [ P.coefficient ci .* pi | (ci,pi :>=: _) <- zip cs premises]
-                                           
-
-data AbstractCoefficientDiff s =
-  ACDiff { posAC :: E.Expression (Literal s)
-         , negAC :: E.Expression (Literal s) }
-
-instance IsNat (AbstractCoefficientDiff s) where
-  fromNatural_ n = ACDiff { posAC = fromNatural_ n, negAC = E.zero }
-
-type AbstractDiffPoly s v = P.Polynomial v (AbstractCoefficientDiff s)
-
-toDiff :: AbstractCoefficient s -> AbstractCoefficientDiff s
-toDiff c = ACDiff { posAC = c, negAC = E.zero }
-
-toDiffPoly :: AbstractPoly s v -> AbstractDiffPoly s v
-toDiffPoly = fmap toDiff 
-
-negateDiff :: AbstractCoefficientDiff s -> AbstractCoefficientDiff s
-negateDiff p = ACDiff { posAC = negAC p, negAC = posAC p}
-
-instance SMT.SMTSolver s => Additive (AbstractCoefficientDiff s) where
-  zero = toDiff E.zero
-  d1 .+ d2 = ACDiff { posAC = posAC d1 .+ posAC d2
-                    , negAC = negAC d1 .+ negAC d2 }
-
-instance SMT.SMTSolver s => AdditiveGroup (AbstractCoefficientDiff s) where
-  neg = negateDiff
-  
+                                             
 
 fromAssignment :: (Solver s m) => AbstractInterpretation s f -> SolverM s m (Interpretation f Integer)
-fromAssignment = traverse evalM
+fromAssignment i = I.mapInter MP.simp <$> traverse evalM i
 
 solveM :: (PP.Pretty f, Ord (Literal s), Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter opts cs = do
@@ -172,8 +132,7 @@ solveM inter opts cs = do
   mapM_ (assert . F.subst dio . maxElim) ieqs
   ifM checkSat (Just <$> I.union inter <$> minimizeInter (minimize opts) ainter) (return Nothing)
   where
-    dio (Geq l r) = smtBigAnd [ (posAC p `smtGeq` negAC p)
-                              | p <- P.coefficients (toDiffPoly l .- toDiffPoly r)]
+    dio (Geq l r) = smtBigAnd [ (p `smtGeq` q) | (p :>=: q) <- P.strictlyPositive (l `P.minus` r) ]
 
     minimizeInter (MinimizeIterate n) ainter | n <= 0 = fromAssignment ainter
     minimizeInter mo ainter = do

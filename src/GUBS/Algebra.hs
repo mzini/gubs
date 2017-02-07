@@ -40,9 +40,10 @@ class IsNat a where
   fromNatural_ :: Integer -> a
 
 fromNatural :: (Integral a, IsNat b) => a -> b
-fromNatural n | i < 0 = error "fromNatural: negative Integer"
-              | otherwise = fromNatural_ i
-  where i = fromIntegral n
+fromNatural = fromNatural_ . fromIntegral 
+-- fromNatural n | i < 0 = error "fromNatural: negative Integer"
+--               | otherwise = fromNatural_ i
+--   where i = fromIntegral n
 
 -- instances
 
