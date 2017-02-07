@@ -55,7 +55,6 @@ class (Show (Literal s), PP.Pretty (Literal s), Ord (Literal s), SemiRing (Exp s
   checkSat :: (MonadIO m, MonadTrace String m) => SolverM s m Bool
   getValue :: Monad m => Literal s -> SolverM s m Integer
 
-
 type Solver s m = (SMTSolver s, MonadIO m, Monad (SolverM s m), Supply (SolverM s m) (Literal s))
 
 assert :: (Solver s m) => Formula (Exp s) -> SolverM s m ()

@@ -1,11 +1,11 @@
 module GUBS.Solve.SMT ( smt, SMTSolver (..), PolyShape (..), Minimization (..), SMTOpts (..), defaultSMTOpts ) where
 
-import Data.List (subsequences,nub)
-import Data.Foldable (toList)
+import Data.List (subsequences,nub, (\\))
 import Control.Arrow (second)
+import Control.Applicative ((<|>))
 import Control.Monad (forM, foldM, forM_, liftM, when, unless, filterM, (>=>), replicateM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State (StateT, execStateT, get, modify)
+import Control.Monad.State (StateT, runStateT, get, modify)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trace
 
@@ -88,17 +88,19 @@ freshPoly SMTOpts { .. } ar
       where toMP mono c = MP.constant c .* prod [MP.variable v .^ i | (v,i) <- mono]
             
 
-interpret :: (Solver s m, Ord f, Ord v) => SMTOpts -> Term f v -> StateT (AbstractInterpretation s f) (SolverM s m) (AbstractMaxPoly s v)
+interpret :: (Solver s m, Ord f, Ord v) => SMTOpts -> Term f v -> StateT (Interpretation f Integer,AbstractInterpretation s f) (SolverM s m) (AbstractMaxPoly s v)
 interpret opts = T.interpretM (return . MP.variable) i where
   i f as = I.apply <$> getPoly <*> return as
     where
       ar = length as                             
       getPoly = do
-        ainter <- get
-        maybe addFreshPoly return (I.get ainter f ar)
+        (inter,ainter) <- get
+        case (fmap fromNatural `fmap` I.get inter f ar) <|> I.get ainter f ar of
+          Nothing -> addFreshPoly
+          Just p -> return p
       addFreshPoly = do
         p <- lift (freshPoly opts ar)
-        modify (\ ainter -> I.insert ainter f ar p)
+        modify (\ (inter,ainter) -> (inter,I.insert ainter f ar p))
         return p
 
 maxElim :: (Ord v, IsNat c, SemiRing c) => Constraint (MP.MaxPoly v c) -> Formula (P.Polynomial v c)
@@ -163,35 +165,33 @@ instance SMT.SMTSolver s => AdditiveGroup (AbstractCoefficientDiff s) where
 fromAssignment :: (Solver s m) => AbstractInterpretation s f -> SolverM s m (Interpretation f Integer)
 fromAssignment = traverse evalM
 
-solveM :: (PP.Pretty v, PP.Pretty (Literal s), Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
+solveM :: (PP.Pretty f, Ord (Literal s), Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter opts cs = do
-  let inter' = I.mapInter (fmap fromNatural) inter
-  ainter <- flip execStateT inter' $ 
-    forM_ cs $ \ (l :>=: r) -> do
-      c <- (:>=:) <$> interpret opts l <*> interpret opts r
-      lift $ assert (F.subst dio (maxElim c))
-  ifM checkSat (Just <$> minimizeCoeffs (minimize opts) ainter) (return Nothing)
+  (ieqs,(_,ainter)) <- flip runStateT (inter,I.empty) $ sequence $
+    [(:>=:) <$> interpret opts l <*> interpret opts r | (l :>=: r) <- cs ]
+  mapM_ (assert . F.subst dio . maxElim) ieqs
+  ifM checkSat (Just <$> I.union inter <$> minimizeInter (minimize opts) ainter) (return Nothing)
   where
     dio (Geq l r) = smtBigAnd [ (posAC p `smtGeq` negAC p)
                               | p <- P.coefficients (toDiffPoly l .- toDiffPoly r)]
 
-    minimizeCoeffs (MinimizeIterate n) ainter | n <= 0 = fromAssignment ainter
-    minimizeCoeffs mo ainter = do
-      inter <- fromAssignment ainter
-      bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) c <$> evalM c | c <- cs ]
-      if null bs
-        then fromAssignment ainter
-        else do
-        lift (logMsg ("minimizing " ++ show (length bs) ++ " candidates..."))
-        let c1 = fromNatural (sum [ b | (_,b) <- bs ] - 1) `smtGeq` sumA [ c | (c,_) <- bs ] 
-        assert (c1)
-        ifM checkSat (minimizeCoeffs (pred mo) ainter) (return inter)
+    minimizeInter (MinimizeIterate n) ainter | n <= 0 = fromAssignment ainter
+    minimizeInter mo ainter = do
+      cinter <- fromAssignment ainter
+      let w = metric cinter - 1
+      lift (logMsg (PP.text "interpretation:" PP.<+> PP.align (PP.pretty cinter)))
+      lift (logMsg ("minimizing weight " ++ show w ++ " ..."))
+      assert (fromNatural (w) `smtGeq` metric ainter)
+      ifM checkSat (minimizeInter mo' ainter) (return cinter)
       where
-        d = I.domain inter
-        ps = [ p | (fi,p) <- I.toList ainter, fi `notElem` d]
-        cs = concatMap toList ps
-        pred MinimizeFull = MinimizeFull
-        pred (MinimizeIterate i) = MinimizeIterate (i - 1)      
+        mo' = case mo of { MinimizeFull -> MinimizeFull; MinimizeIterate i -> MinimizeIterate (i - 1) }
+
+        metric i = sumA [ m p | (fi,p) <- I.toList i] where
+          m (MP.Var v)    = fromNatural 0
+          m (MP.Const c)  = c
+          m (MP.Plus p q) = m p .+ m q
+          m (MP.Mult p q) = m p .+ m q
+          m (MP.Max p q)  = fromNatural 2 .* (m p .+ m q)
       
   -- do
   -- (cconstrs,ainter) <- flip runStateT (I.mapInter (fmap fromNatural) inter) $
@@ -244,7 +244,7 @@ solveM inter opts cs = do
              
       
          
-smt :: (PP.Pretty v, Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
+smt :: (PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress
 smt solver opts cs = do
   getInterpretation >>= run solver >>= maybe fail success

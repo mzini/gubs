@@ -22,6 +22,9 @@ newtype Interpretation f c = Inter (M.Map (f,Int) (P.MaxPoly Var c))
 domain :: Interpretation f c -> [(f,Int)]
 domain (Inter m) = M.keys m
 
+image :: Interpretation f c -> [P.MaxPoly Var c]
+image (Inter m) = M.elems m
+
 get :: Ord f => Interpretation f c -> f -> Int -> Maybe (P.MaxPoly Var c)
 get (Inter m) f i = M.lookup (f,i) m
 

@@ -1,6 +1,7 @@
 module GUBS.MaxPolynomial where
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import Data.Foldable (toList)
 
 import           GUBS.Utils
 import           GUBS.Algebra
@@ -29,6 +30,9 @@ variables (Const _)  = []
 variables (Plus p q) = variables p ++ variables q
 variables (Mult p q) = variables p ++ variables q
 variables (Max p q)  = variables p ++ variables q
+
+coefficients :: MaxPoly v c -> [c]
+coefficients = toList
 
 instance IsNat c => IsNat (MaxPoly v c) where
   fromNatural_ = Const . fromNatural
@@ -138,7 +142,7 @@ simp = simp' where
   
 
 instance (Eq c, Eq v, IsNat c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
-  pretty = pp id . simp where
+  pretty = pp id where -- TODO  . simp
     pp _   (Var v)      = PP.pretty v
     pp _   (Const i)    = PP.pretty i
     pp par (Mult t1 t2) = ppBin par "*" t1 t2
