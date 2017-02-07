@@ -131,15 +131,16 @@ splitMax (Max p q)  = splitMax p ++ splitMax q
 -- pretty printing
 
 simp :: (Ord c, Ord v, IsNat c, SemiRing c) => MaxPoly v c -> MaxPoly v c
-simp = fromPolyList . filterSubsumed . nub . splitMax where
+simp = fromPolyList . filterSubsumed . nub . splitMax where -- 
   fromPolyList [] = zero
   fromPolyList ps = maximumA (map fromPoly ps)
 
   fromPoly = P.fromPolynomial variable constant
-
-  filterSubsumed ps = foldr (\ p -> filter (subsumes p)) ps ps
+  -- TODO  max(x0 + x1 + x2,1 + x0)
+  filterSubsumed ps = foldr (\ p -> filter (not . subsumes p)) ps ps
   p1 `subsumes` p2 =
     and [ c1 >= c2 | (c1 :>=: c2) <- P.strictlyPositive (p1 `P.minus` p2)]
+    && p1 /= p2
 
 instance (Eq c, Eq v, IsNat c, Max c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
   pretty = pp id where

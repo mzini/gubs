@@ -146,11 +146,12 @@ solveM inter opts cs = do
         mo' = case mo of { MinimizeFull -> MinimizeFull; MinimizeIterate i -> MinimizeIterate (i - 1) }
 
         metric i = sumA [ m p | (fi,p) <- I.toList i] where
-          m (MP.Var v)    = fromNatural 0
-          m (MP.Const c)  = c
-          m (MP.Plus p q) = m p .+ m q
-          m (MP.Mult p q) = m p .+ m q
-          m (MP.Max p q)  = fromNatural 2 .* (m p .+ m q)
+          m p = sumA (MP.coefficients p)
+        --   m (MP.Var v)    = fromNatural 0
+        --   m (MP.Const c)  = c
+        --   m (MP.Plus p q) = m p .+ m q
+        --   m (MP.Mult p q) = m p .+ m q
+        --   m (MP.Max p q)  = fromNatural 1 .+ (m p .+ m q)
       
   -- do
   -- (cconstrs,ainter) <- flip runStateT (I.mapInter (fmap fromNatural) inter) $
