@@ -29,7 +29,7 @@ data Term f v = Var v
               | Mult (Term f v) (Term f v)
               | Plus (Term f v) (Term f v)
               | Max (Term f v) (Term f v)
-              deriving (Show)
+              deriving (Eq, Ord, Show)
 
 
 pattern ZERO = Const 0

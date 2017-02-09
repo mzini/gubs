@@ -5,7 +5,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 
 infix 4 :>=:
-data Constraint a = a :>=: a deriving (Show, Functor)
+data Constraint a = a :>=: a deriving (Show, Eq, Ord, Functor)
 
 data ConditionalConstraint a = CC { premises :: [Constraint a]
                                   , constraint :: Constraint a }

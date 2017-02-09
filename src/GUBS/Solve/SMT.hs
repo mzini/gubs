@@ -9,6 +9,7 @@ module GUBS.Solve.SMT
   -- * minimisation strategies
   , zeroOut
   , decreaseCoeffs
+  , shiftMax
   , tryM
   , iterM
   , andThenM
@@ -16,6 +17,7 @@ module GUBS.Solve.SMT
   , noneM
   ) where
 
+import Data.Maybe (fromJust)
 import Data.List (subsequences,nub, (\\))
 import Control.Arrow (second)
 import Control.Applicative ((<|>))
@@ -51,12 +53,15 @@ data Solver = MiniSmt | Z3 deriving (Show)
 
 data PolyShape = Mixed | MultMixed deriving (Eq, Show)
 
-data MM = ZeroOut | DecreaseCoeff deriving (Show)
+data MM = ZeroOut | DecreaseCoeff | ShiftMax deriving (Show)
 
 data SMTMinimization = SMTMinimize MM | SMTSequence SMTMinimization SMTMinimization | Try SMTMinimization | Success
 
 zeroOut :: SMTMinimization
 zeroOut = SMTMinimize ZeroOut
+
+shiftMax :: SMTMinimization
+shiftMax = SMTMinimize ShiftMax
 
 decreaseCoeffs :: SMTMinimization
 decreaseCoeffs = SMTMinimize DecreaseCoeff
@@ -92,7 +97,7 @@ defaultSMTOpts =
           , maxCoeff = Nothing
           , maxConst = Nothing          
           , maxPoly  = False
-          , minimize = tryM zeroOut `andThenM` iterM 3 decreaseCoeffs }
+          , minimize = tryM (iterM 3 zeroOut) `andThenM` iterM 3 decreaseCoeffs }
 
 -- encoding 
 ----------------------------------------------------------------------
@@ -149,7 +154,7 @@ freshPoly ar = do
 
     exclusive p1 p2 = assert $ smtBigAnd
       [ (c1 `smtEq` fromNatural 0) `smtOr` (c2 `smtEq` fromNatural 0)
-      | (m,c1) <- M.toList (P.toMonoMap p1), let Just c2 = M.lookup m (P.toMonoMap p2) ]
+      | (c1,m) <- P.toMonos p1, let c2 = P.coefficientOf m p2]
     toMaxPoly = P.fromPolynomial MP.variable MP.constant
     polyFromTemplate tp = do
       SMTOpts {..} <- getOpts
@@ -213,7 +218,8 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (walkS ms)) where
       logMsg (PP.text "current interpretation:" PP.<$$> PP.indent 3 (PP.align (PP.pretty cinter)))
       logMsg ("minimizing with " ++ show mm ++ " ...")
     constraintWith mm >>= lift . liftSMT . assert
-    ifM check (return True) (lift (liftSMT pop) >> return False)
+    check <* lift (liftSMT pop)
+    -- ifM check (return True) (lift (liftSMT pop) >> return False)
 
   constraintWith DecreaseCoeff =  do
     ainter <- lift getAInter
@@ -225,7 +231,18 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (walkS ms)) where
     bs <- getCurrentCoefficients
     return $ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- bs ]
              `smtAnd` smtBigOr [ zero `smtEq` c | (c,v) <- bs, v > 0 ]
-
+  constraintWith ShiftMax = do
+    ainter <- lift getAInter
+    cs <- getCurrentCoefficients
+    return (smtBigOr [ shiftMax cs (MP.splitMax p) | p <- I.image ainter])
+      where
+        shiftMax cs ps = smtBigOr [ smtBigAnd [ c' `smtEq` fromNatural 0
+                                              , fromNatural v `smtGeq` c
+                                              , c `smtGeq` fromNatural 1]
+                                  | p <- ps, isNull p, (c',v,m) <- monos, let c = P.coefficientOf m p ]
+          where
+            monos = [ (c,v,m) | p <- ps, (c,m) <- P.toMonos p, let Just v = lookup c cs, v > 0 ]
+            isNull p = and [ v == 0 | c <- P.coefficients p, let Just v = lookup c cs ]
   getCurrentInterpretation = fst <$> get
   getCurrentCoefficients   = snd <$> get
 

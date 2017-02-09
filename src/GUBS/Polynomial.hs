@@ -1,5 +1,6 @@
 module GUBS.Polynomial where
 
+import           Data.Maybe (fromMaybe)
 import           Data.List (foldl', foldl1')
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import           Data.Functor.Identity        (runIdentity)
@@ -54,6 +55,8 @@ toMonos (Poly m) = [ (c,m) | (m,c) <- M.toList m ]
 toMonoMap :: Polynomial v c -> M.Map (Monomial v) c
 toMonoMap (Poly m) = m
 
+coefficientOf :: (Ord v, Additive c) => Monomial v -> Polynomial v c -> c
+coefficientOf m (Poly p) = fromMaybe zero (M.lookup m p)
 
 instance IsNat c => IsNat (Polynomial v c) where
   fromNatural_ 0 = Poly M.empty

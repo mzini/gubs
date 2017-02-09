@@ -9,6 +9,7 @@ module GUBS.Solve (
 
 
 import           Data.Maybe (fromMaybe)
+import           Data.List (nub)
 
 import qualified GUBS.Interpretation as I
 import qualified GUBS.Polynomial as Poly
@@ -25,7 +26,7 @@ data Answer f v c = Open (ConstraintSystem f v) (Interpretation f c) | Sat (Inte
 
 solveWith :: (Eq c, Integral c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>
   ConstraintSystem f v -> Processor f c v m -> m (Answer f v c, ExecutionLog)
-solveWith cs p = toAnswer <$> run I.empty (p cs) where
+solveWith cs p = toAnswer <$> run I.empty (p (nub cs)) where
   toAnswer (Progress [],i,l) = (Sat i, l)
   toAnswer (Progress cs',i,l) = (Open cs' i, l) 
   toAnswer (NoProgress,i,l) = (Open cs i, l)   
