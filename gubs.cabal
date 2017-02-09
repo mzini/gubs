@@ -31,19 +31,19 @@ library
                    GUBS.Utils
                    GUBS
   other-extensions:    
-  build-depends:       base >= 4.8 && <4.9,
-                       containers >=0.5 && <0.6,
+  build-depends:       base,
+                       containers,
                        smtlib2 >=0.3.1 && <0.4,
-                       mtl >=2.2 && <2.3,
-                       monad-trace >=0.1 && <0.2,
-                       transformers >=0.4 && <0.5,
-                       bytestring     >=0.10 && <0.11,
-                       process        >=1.2 && <1.3,
-                       temporary      >=1.2 && <1.3,
-                       ansi-wl-pprint >= 0.6 && < 0.7,
-                       multiset       >= 0.3 && < 0.4,
+                       mtl,
+                       monad-trace,
+                       transformers,
+                       bytestring,
+                       process,
+                       temporary,
+                       ansi-wl-pprint,
+                       multiset,
                        time,
-                       parsec >= 3.1 && < 3.2                                              
+                       parsec 
   hs-source-dirs:      src
   default-language:    Haskell2010
   default-extensions:  StandaloneDeriving,

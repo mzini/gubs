@@ -1,13 +1,29 @@
-module GUBS.Solve.SMT ( smt, SMTSolver (..), PolyShape (..), Minimization (..), SMTOpts (..), defaultSMTOpts ) where
+module GUBS.Solve.SMT
+  ( smt
+  -- * options
+  , SMTSolver (..)
+  , PolyShape (..)
+  , SMTOpts (..)
+  , defaultSMTOpts
+  -- * minimisation strategies
+  , zeroOut
+  , decreaseCoeffs
+  , tryM
+  , iterM
+  , andThenM
+  , exhaustiveM
+  , noneM
+  ) where
 
 import Data.List (subsequences,nub, (\\))
 import Control.Arrow (second)
 import Control.Applicative ((<|>))
 import Control.Monad (forM, foldM, forM_, liftM, when, unless, filterM, (>=>), replicateM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State (StateT, runStateT, get, modify)
+import Control.Monad.State (StateT, runStateT, execStateT, get, put, modify)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trace
+import qualified Data.Map as M
 
 import           GUBS.Algebra
 import           GUBS.Utils
@@ -19,7 +35,7 @@ import qualified GUBS.MaxPolynomial as MP
 import qualified GUBS.Polynomial as P
 import           GUBS.Constraint (Constraint (..), ConditionalConstraint (..), lhs, rhs)
 import           GUBS.ConstraintSystem (ConstraintSystem)
-import           GUBS.Solve.Strategy
+import           GUBS.Solve.Strategy (Processor, Interpretation, Result (..), modifyInterpretation, getInterpretation)
 import           GUBS.Solver hiding (SMTSolver)
 import qualified GUBS.Solver.Class as SMT
 import qualified GUBS.Solver.Formula as F
@@ -28,17 +44,38 @@ import qualified GUBS.Solver.Formula as F
 import GUBS.Utils (tracePretty)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
+-- options
+----------------------------------------------------------------------
+
 data SMTSolver = MiniSmt | Z3 deriving (Show)
 
-type AbstractCoefficient s = E.Expression (Literal s) -- TODO: better literals (One, Boolean, ArbitraryNat,...)
-type AbstractMaxPoly s v = MP.MaxPoly v (AbstractCoefficient s)
-type AbstractPoly s v = P.Polynomial v (AbstractCoefficient s)
-type AbstractInterpretation s f = I.Interpretation f (AbstractCoefficient s)
+data PolyShape = Mixed | MultMixed deriving (Eq, Show)
 
-data PolyShape = Mixed | MultMixed
-  deriving (Eq, Show)
+data MM = ZeroOut | DecreaseCoeff deriving (Show)
 
-data Minimization = MinimizeFull | MinimizeIterate Int
+data SMTMinimization = SMTMinimize MM | SMTSequence SMTMinimization SMTMinimization | Try SMTMinimization | Success
+
+zeroOut :: SMTMinimization
+zeroOut = SMTMinimize ZeroOut
+
+decreaseCoeffs :: SMTMinimization
+decreaseCoeffs = SMTMinimize DecreaseCoeff
+
+tryM :: SMTMinimization -> SMTMinimization
+tryM = Try
+
+andThenM :: SMTMinimization -> SMTMinimization -> SMTMinimization
+andThenM = SMTSequence
+
+iterM :: Int -> SMTMinimization -> SMTMinimization
+iterM i s | i <= 0 = Success
+         | otherwise = s `andThenM` tryM (iterM (i-1) s)
+
+exhaustiveM :: SMTMinimization -> SMTMinimization
+exhaustiveM s = s `andThenM` tryM (exhaustiveM s)
+
+noneM :: SMTMinimization
+noneM = Success
 
 data SMTOpts =
   SMTOpts { shape    :: PolyShape
@@ -46,7 +83,7 @@ data SMTOpts =
           , maxCoeff :: Maybe Int
           , maxConst :: Maybe Int          
           , maxPoly  :: Bool
-          , minimize :: Minimization }
+          , minimize :: SMTMinimization }
 
 defaultSMTOpts :: SMTOpts
 defaultSMTOpts =
@@ -54,22 +91,33 @@ defaultSMTOpts =
           , degree = 2
           , maxCoeff = Nothing
           , maxConst = Nothing          
-          , maxPoly  = True
-          , minimize = MinimizeFull }
+          , maxPoly  = False
+          , minimize = tryM zeroOut `andThenM` iterM 3 decreaseCoeffs }
+
+-- encoding 
+----------------------------------------------------------------------
+
+type AbstractCoefficient s = SMTExpression s
+type AbstractMaxPoly s v = MP.MaxPoly v (AbstractCoefficient s)
+type AbstractPoly s v = P.Polynomial v (AbstractCoefficient s)
+type AbstractInterpretation s f = I.Interpretation f (AbstractCoefficient s)
 
 
-freshNat :: (Solver s m) => Maybe Int -> SolverM s m (AbstractCoefficient s)
-freshNat mub = do
-  v <- E.variable <$> fresh
-  assert (v `smtGeq` fromNatural 0)
+freshCoeff :: (Solver s m) => Maybe Int -> SolverM s m (AbstractCoefficient s)
+freshCoeff mub = do
+  v <- E.variable <$> SMT.freshNat
   whenJust mub $ \ ub -> assert (fromNatural ub `smtGeq` v)
   return v
 
 
 freshPoly :: (Solver s m) => SMTOpts -> Int -> SolverM s m (AbstractMaxPoly s I.Var)
 freshPoly SMTOpts { .. } ar
-  | maxPoly   = maxA <$> polyFromTemplate template <*> polyFromTemplate template
-  | otherwise = polyFromTemplate template 
+  | maxPoly   = do
+      p1 <- polyFromTemplate template
+      p2 <- polyFromTemplate template
+      exclusive p1 p2
+      return (toMaxPoly p1 `maxA` toMaxPoly p2)
+  | otherwise = toMaxPoly <$> polyFromTemplate template 
   where
     template | shape == MultMixed = [ [ (v,1) | v <- ms] | ms <- subsequences (take ar I.variables)
                                                          , length ms <= degree ]
@@ -83,9 +131,13 @@ freshPoly SMTOpts { .. } ar
             | v == v' = (v',i+1) : mono
             | otherwise = (v',i) : v `mult` mono
 
+    exclusive p1 p2 = assert $ smtBigAnd
+      [ (c1 `smtEq` fromNatural 0) `smtOr` (c2 `smtEq` fromNatural 0)
+      | (m,c1) <- M.toList (P.toMonoMap p1), let Just c2 = M.lookup m (P.toMonoMap p2) ]
+    toMaxPoly = P.fromPolynomial MP.variable MP.constant
     polyFromTemplate tp =
-      sumA <$> sequence [ toMP mono <$> freshNat (if null mono then maxConst else maxCoeff) | mono <- tp]
-      where toMP mono c = MP.constant c .* prod [MP.variable v .^ i | (v,i) <- mono]
+      sumA <$> sequence [ toP mono <$> freshCoeff (if null mono then maxConst else maxCoeff) | mono <- tp]
+      where toP mono c = P.coefficient c .* prod [P.variable v .^ i | (v,i) <- mono]
             
 
 interpret :: (Solver s m, Ord f, Ord v) => SMTOpts -> Term f v -> StateT (Interpretation f Integer,AbstractInterpretation s f) (SolverM s m) (AbstractMaxPoly s v)
@@ -103,7 +155,7 @@ interpret opts = T.interpretM (return . MP.variable) i where
         modify (\ (inter,ainter) -> (inter,I.insert ainter f ar p))
         return p
 
-maxElim :: (Ord v, IsNat c, SemiRing c) => Constraint (MP.MaxPoly v c) -> Formula (P.Polynomial v c)
+maxElim :: (Ord v, IsNat c, SemiRing c) => Constraint (MP.MaxPoly v c) -> Formula l (P.Polynomial v c)
 maxElim = smtBigAnd . map elimLhs . elimRhs
   where
     elimRhs (l :>=: r) = [ (l,r') | r' <- MP.splitMax r ]
@@ -122,87 +174,56 @@ maxElim = smtBigAnd . map elimLhs . elimRhs
 --             r = q .+ sumA [ P.coefficient ci .* pi | (ci,pi :>=: _) <- zip cs premises]
                                              
 
+
 fromAssignment :: (Solver s m) => AbstractInterpretation s f -> SolverM s m (Interpretation f Integer)
 fromAssignment i = I.mapInter MP.simp <$> traverse evalM i
 
-solveM :: (PP.Pretty f, Ord (Literal s), Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
+minimizeM :: (PP.Pretty f, Ord f, Ord v, Solver s m, MonadTrace String m) => ConstraintSystem f v -> AbstractInterpretation s f -> SMTMinimization -> SolverM s m (Interpretation f Integer)
+minimizeM cs ainter ms = fst <$> (stateFromModel >>= execStateT (walkS ms)) where
+
+  walkS Success          = return True
+  walkS (Try m)          = walkS m >> return True
+  walkS (SMTMinimize mm) = minimizeWith mm
+  walkS (SMTSequence m1 m2) = do
+    cont <- walkS m1
+    if cont then walkS m2 else return False
+    
+  minimizeWith mm = do
+    cinter <- getCurrentInterpretation
+    lift push
+    lift (lift (logMsg (PP.text "current interpretation:" PP.<$$> PP.indent 3 (PP.align (PP.pretty cinter)))
+                >> logMsg ("minimizing with " ++ show mm ++ " ...")))
+    constraintWith mm >>= lift . assert
+    ifM check (return True) (lift pop >> return False)
+
+  constraintWith DecreaseCoeff =  do
+    cinter <- getCurrentInterpretation
+    return (fromNatural (coeffSum cinter - 1) `smtGeq` coeffSum ainter)
+    where 
+      coeffSum i = sumA [ sumA (MP.coefficients p) | (fi,p) <- I.toList i]
+  constraintWith ZeroOut = do
+    bs <- getCurrentCoefficients
+    return $ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- bs ]
+             `smtAnd` smtBigOr [ zero `smtEq` c | (c,v) <- bs, v > 0 ]
+
+  getCurrentInterpretation = fst <$> get
+  getCurrentCoefficients   = snd <$> get
+
+  stateFromModel = (,) <$> fromAssignment ainter <*> sequence [ (,) c <$> evalM c | c <- cs ]
+  
+  cs = concatMap MP.coefficients (I.image ainter)
+
+  check = ifM (lift checkSat) (lift stateFromModel >>= put >> return True) (return False)
+    
+
+solveM :: (PP.Pretty f, Ord f, Ord v, Solver s m, MonadTrace String m) => Interpretation f Integer -> SMTOpts -> ConstraintSystem f v -> SolverM s m (Maybe (Interpretation f Integer))
 solveM inter opts cs = do
   (ieqs,(_,ainter)) <- flip runStateT (inter,I.empty) $ sequence $
     [(:>=:) <$> interpret opts l <*> interpret opts r | (l :>=: r) <- cs ]
   mapM_ (assert . F.subst dio . maxElim) ieqs
-  ifM checkSat (Just <$> I.union inter <$> minimizeInter (minimize opts) ainter) (return Nothing)
+  ifM checkSat (Just <$> I.union inter <$> minimizeM cs ainter (minimize opts)) (return Nothing)
   where
     dio (Geq l r) = smtBigAnd [ (p `smtGeq` q) | (p :>=: q) <- P.strictlyPositive (l `P.minus` r) ]
-
-    minimizeInter (MinimizeIterate n) ainter | n <= 0 = fromAssignment ainter
-    minimizeInter mo ainter = do
-      cinter <- fromAssignment ainter
-      let w = metric cinter - 1
-      lift (logMsg (PP.text "interpretation:" PP.<+> PP.align (PP.pretty cinter)))
-      lift (logMsg ("minimizing weight " ++ show w ++ " ..."))
-      assert (fromNatural (w) `smtGeq` metric ainter)
-      ifM checkSat (minimizeInter mo' ainter) (return cinter)
-      where
-        mo' = case mo of { MinimizeFull -> MinimizeFull; MinimizeIterate i -> MinimizeIterate (i - 1) }
-
-        metric i = sumA [ m p | (fi,p) <- I.toList i] where
-          m p = sumA (MP.coefficients p)
-        --   m (MP.Var v)    = fromNatural 0
-        --   m (MP.Const c)  = c
-        --   m (MP.Plus p q) = m p .+ m q
-        --   m (MP.Mult p q) = m p .+ m q
-        --   m (MP.Max p q)  = fromNatural 1 .+ (m p .+ m q)
-      
-  -- do
-  -- (cconstrs,ainter) <- flip runStateT (I.mapInter (fmap fromNatural) inter) $
-  --   foldM collectCoefficientConstraints [] cs
-  -- assert (smtBigAnd [ p `smtGeq` n | p :>=: n <- cconstrs])
-  -- sat <- checkSat  
-  -- if sat
-  --   then Just <$> refine cconstrs ainter
-  --   else return Nothing
-
-  --   where
-  --     toCoefficientConstraints (il' :>=: ir') =
-  --       [ (posAC p :>=: negAC p) | p <- P.coefficients (toDiffPoly il' .- toDiffPoly ir') ]      
-      
-  --     collectCoefficientConstraints ccs (l :>=: r) = do
-  --       il <- interpret opts l
-  --       ir <- interpret opts r
-  --       let mcs = MP.maxElim (il :>=: ir)
-  --       -- cs <- forM mcs $ \cc -> lift (condElim cc)
-  --       lift (lift (logMsg (il :>=: ir)))
-  --       cs <- forM mcs $ \cc -> lift $ lift (logMsg cc) >> condElim cc
-  --       return (foldr ((++) . toCoefficientConstraints) ccs cs)
-
-  --     refine cconstrs ainter = fromAssignment ainter >>= minimizeCoeffs (minimize opts)
-  --       where
-  --         minimizeCoeffs (MinimizeIterate n) inter | n <= 0 = return inter
-  --         minimizeCoeffs mo inter = do
-  --           bs <- filter (\ (_,b) -> b > 0) <$> sequence [ (,) coeff <$> evalM coeff | (coeff :>=: _) <- cconstrs ]
-  --           if null bs
-  --             then return inter
-  --             else do
-  --             lift (logMsg ("minimizing " ++ show (length bs) ++ " candidates.."))
-  --             assert (smtBigAnd [ fromNatural b     `smtGeq` coeff | (coeff,b) <- bs ])
-  --             assert (smtBigOr  [ fromNatural (b-1) `smtGeq` coeff | (coeff,b) <- bs ])
-  --             sat <- checkSat
-  --             if sat
-  --               then fromAssignment ainter >>= minimizeCoeffs (pred mo)
-  --               else return inter
-  --               where pred MinimizeFull = MinimizeFull
-  --                     pred (MinimizeIterate i) = MinimizeIterate (i - 1)
-  --       -- vs = nub (concatMap P.variables coeffs)
-  --       -- setZero inter = do
-  --       --   vs' <- filterM (getValue >=> \ w -> return (w > 0)) vs
-  --       --   push
-  --       --   assert [ EQC (lit v) 0 | v <- vs']
-  --       --   sat <- checkSat
-  --       --   if sat
-  --       --    then fromAssignment ainter >>= setZero
-  --       --    else pop >> return inter
-             
-      
          
 smt :: (PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => SMTSolver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress

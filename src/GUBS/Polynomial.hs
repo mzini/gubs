@@ -51,6 +51,9 @@ fromMonos ms = Poly (M.fromList [ (m,c) | (c,m) <- ms])
 toMonos :: Polynomial v c -> [(c,Monomial v)]
 toMonos (Poly m) = [ (c,m) | (m,c) <- M.toList m ]
 
+toMonoMap :: Polynomial v c -> M.Map (Monomial v) c
+toMonoMap (Poly m) = m
+
 
 instance IsNat c => IsNat (Polynomial v c) where
   fromNatural_ 0 = Poly M.empty

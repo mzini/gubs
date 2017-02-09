@@ -4,45 +4,63 @@ import GUBS.Algebra
 
 data Atom e = Geq e e | Eq e e
   deriving (Functor, Foldable, Traversable)
-  
-data Formula e =
-  Top
-  | Bot
-  | Atom (Atom e)
-  | Or (Formula e) (Formula e)
-  | And (Formula e) (Formula e)  
+
+data BoolLit l = BoolLit l | NegBoolLit l
   deriving (Functor, Foldable, Traversable)
 
-subst :: (Atom e -> Formula e') -> Formula e -> Formula e'
+-- TODO gadtify
+data Formula l e =
+  Top
+  | Bot
+  | Lit (BoolLit l)
+  | Atom (Atom e)
+  | Or (Formula l e) (Formula l e)
+  | And (Formula l e) (Formula l e)
+  | Iff (Formula l e) (Formula l e)
+  | LetB (Formula l e) (l -> Formula l e)
+
+subst :: (Atom e -> Formula l e') -> Formula l e -> Formula l e'
 subst _ Top = Top
 subst _ Bot = Bot
+subst _ (Lit l) = Lit l
 subst f (Atom a) = f a
 subst f (Or e1 e2) = Or (subst f e1) (subst f e2)
 subst f (And e1 e2) = And (subst f e1) (subst f e2)
-  
-gtA,eqA,geqA :: (IsNat e, Additive e) => e -> e -> Formula e
+subst f (LetB e1 e2) = LetB (subst f e1) (subst f . e2)
+
+literal :: l -> Formula l e
+literal = Lit . BoolLit
+
+negLiteral :: l -> Formula l e
+negLiteral = Lit . NegBoolLit
+
+gtA,eqA,geqA :: (IsNat e, Additive e) => e -> e -> Formula l e
 gtA e1 e2 = Atom (Geq e1 (e2 .+ fromNatural 1))
 eqA e1 e2 = Atom (Eq e1 e2)
 geqA e1 e2 = Atom (Geq e1 e2)
 
-smtTop, smtBot :: Formula s
+smtTop, smtBot :: Formula b e
 smtTop = Top
 smtBot = Bot
 
-smtBool :: Bool -> Formula s
+smtBool :: Bool -> Formula b e
 smtBool True  = Top
 smtBool False = Bot
 
-smtNot :: (IsNat e, Additive e) => Formula e -> Formula e
-smtNot Top = Bot
-smtNot Bot = Top
-smtNot (Atom (Geq e1 e2)) = e2 `gtA` e1
-smtNot (Atom (Eq e1 e2)) = Or (e1 `gtA` e2) (e2 `gtA` e1)
-smtNot (Or f1 f2) = And (smtNot f1) (smtNot f2)
-smtNot (And f1 f2) = Or (smtNot f1) (smtNot f2)
+-- smtNot :: (IsNat e, Additive e) => Formula l e -> Formula l e
+-- smtNot Top = Bot
+-- smtNot Bot = Top
+-- smtNot (Lit (BoolLit l)) = smtNot (Lit (NegBoolLit l))
+-- smtNot (Lit (NegBoolLit l)) = smtNot (Lit (BoolLit l))
+-- smtNot (Atom (Geq e1 e2)) = e2 `gtA` e1
+-- smtNot (Atom (Eq e1 e2)) = Or (e1 `gtA` e2) (e2 `gtA` e1)
+-- smtNot (Or f1 f2) = And (smtNot f1) (smtNot f2)
+-- smtNot (And f1 f2) = Or (smtNot f1) (smtNot f2)
+-- smtNot (Iff f1 f2) = Iff (smtNot f1) f2
+-- smtNot (LetB f1 f2) = LetB f1 (smtNot . f2)
 
 
-smtAnd, smtOr :: Formula s -> Formula s -> Formula s
+smtAnd, smtOr :: Formula l e -> Formula l e -> Formula l e
 Top `smtAnd` f2  = f2
 f1  `smtAnd` Top = f1
 Bot `smtAnd` _   = Bot
@@ -56,13 +74,14 @@ _   `smtOr` Top = Top
 f1  `smtOr` f2  = Or f1 f2
 
 
--- smtIte :: Formula e -> Formula e -> Formula e -> Formula e
--- smtIte Top t   _   = t
--- smtIte Bot _   e   = e
--- smtIte g   Bot e   = smtNot g `smtAnd` e
--- smtIte g   t   Bot = g `smtAnd` t
--- smtIte 
-
-smtBigOr, smtBigAnd :: [Formula s] -> Formula s
+smtBigOr, smtBigAnd :: [Formula l e] -> Formula l e
 smtBigOr = foldr smtOr smtBot
 smtBigAnd = foldr smtAnd smtTop
+
+letB ::  Formula l e -> (l -> Formula l e) -> Formula l e
+letB = LetB
+
+letB' :: [Formula l e] -> ([l] -> Formula l e) -> Formula l e
+letB' = walk [] where
+  walk ls [] f = f (reverse ls)
+  walk ls (e:es) f = LetB e (\ l -> walk (l:ls) es f)

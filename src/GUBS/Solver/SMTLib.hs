@@ -4,6 +4,8 @@ module GUBS.Solver.SMTLib (
 
 import GUBS.Algebra
 import GUBS.Solver.Class
+import qualified GUBS.Expression as E
+import qualified GUBS.Solver.Formula as F
 import qualified Language.SMTLib2 as SMT
 import qualified Language.SMTLib2.Internals as SMTI
 import qualified Language.SMTLib2.Solver as SMT
@@ -12,28 +14,30 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 data SMTLibSolver = SMTLibSolver
 
-instance IsNat (Exp SMTLibSolver) where
-  fromNatural_ = Exp . fromInteger
-  
-instance Additive (Exp SMTLibSolver) where
-  zero = fromNatural 0
-  Exp e1 .+ Exp e2 = Exp (e1 + e2)
-
-instance Multiplicative (Exp SMTLibSolver) where
-  one = fromNatural 1
-  Exp e1 .* Exp e2 = Exp (e1 * e2)  
-  
-
 liftSMT :: SMT.SMT' m a -> SolverM SMTLibSolver m a
 liftSMT = SMT
 
-toSMTFormula :: Formula (Exp SMTLibSolver) -> SMTI.SMTExpr Bool
+instance IsNat (SMTI.SMTExpr Integer) where
+  fromNatural_ = fromInteger
+  
+instance Additive (SMTI.SMTExpr Integer) where
+  zero = fromNatural 0
+  e1 .+ e2 = e1 + e2
+
+instance Multiplicative (SMTI.SMTExpr Integer) where
+  one = fromNatural 1
+  e1 .* e2 = e1 * e2
+
+toSMTExp :: SMTExpression SMTLibSolver -> SMTI.SMTExpr Integer
+toSMTExp = E.toNatural fromNatural var where var (NLit (res,ann)) = SMTI.Var res ann
+
+toSMTFormula :: SMTFormula SMTLibSolver -> SMTI.SMTExpr Bool
 toSMTFormula f =
   case f of
     Top -> SMT.constant True
     Bot -> SMT.constant False
-    Atom (Geq (Exp l) (Exp r)) -> l SMT..>=. r
-    Atom (Eq (Exp l) (Exp r)) ->  l SMT..==. r
+    Atom (Geq l r) -> toSMTExp l SMT..>=. toSMTExp r
+    Atom (Eq l r) ->  toSMTExp l SMT..==. toSMTExp r
     And f1 f2 -> app SMT.and' [f1,f2]
     Or f1 f2 -> app SMT.or' [f1,f2]
   where app op fs = SMT.app op (map toSMTFormula fs)
@@ -49,32 +53,40 @@ instance Monad m => Monad (SolverM SMTLibSolver m) where
 instance MonadTrans (SolverM SMTLibSolver) where
   lift m = SMT (lift m)
 
-instance Monad m => Supply (SolverM SMTLibSolver m) (Literal SMTLibSolver) where
-  fresh = do
-    SMTI.Var res ann <- liftSMT var
-    return (Lit (res,ann))
-    where
-      var :: Monad m => SMT.SMT' m (SMT.SMTExpr Integer)
-      var = SMT.var
-
 instance SMTSolver SMTLibSolver where
   data SolverM SMTLibSolver m a = SMT (SMT.SMT' m a) deriving (Functor)
-  data Literal SMTLibSolver = Lit (Integer, SMTI.SMTAnnotation Integer) deriving Show
-  data Exp SMTLibSolver = Exp (SMT.SMTExpr Integer)
+  data NLiteral SMTLibSolver = NLit (Integer, SMTI.SMTAnnotation Integer) deriving (Eq, Ord, Show)
+  data BLiteral SMTLibSolver = BLit (Integer, SMTI.SMTAnnotation Bool) deriving (Eq, Ord, Show)
 
-  lit (Lit (i,ann)) = Exp (SMTI.Var i ann)
-  constnt = Exp <$> SMT.constant
-  assertFormula f = liftSMT (SMT.assert (toSMTFormula f))
-  getValue (Lit (i,ann)) = liftSMT (SMT.getValue (SMTI.Var i ann))
+  freshBool = fromVar <$> liftSMT SMT.var
+    where
+      fromVar :: SMT.SMTExpr Bool -> BLiteral SMTLibSolver
+      fromVar (SMTI.Var res ann) = BLit (res,ann)
+  freshNat = do
+    n <- fromVar <$> liftSMT SMT.var
+    assertFormula (E.variable n `F.geqA` fromNatural 0)
+    return n
+    where
+      fromVar :: SMT.SMTExpr Integer -> NLiteral SMTLibSolver
+      fromVar (SMTI.Var res ann) = NLit (res,ann)
+      
   push = liftSMT SMT.push
   pop = liftSMT SMT.pop
+  
+  assertFormula f = liftSMT (SMT.assert (toSMTFormula f))
+  getValue (NLit (i,ann)) = liftSMT (SMT.getValue (SMTI.Var i ann))
   checkSat = liftSMT SMT.checkSat
 
 z3 :: MonadIO m => SolverM SMTLibSolver m a -> m a
 z3 (SMT m) = SMT.withZ3 m
 
-deriving instance Eq (Literal SMTLibSolver)
-deriving instance Ord (Literal SMTLibSolver)
+-- deriving instance Eq (NLiteral SMTLibSolver)
+-- deriving instance Ord (NLiteral SMTLibSolver)
+-- deriving instance Eq (BLiteral SMTLibSolver)
+-- deriving instance Ord (BLiteral SMTLibSolver)
 
-instance PP.Pretty (Literal SMTLibSolver) where
-  pretty (Lit (i,_)) = PP.text "v" PP.<> PP.integer i
+
+instance PP.Pretty (NLiteral SMTLibSolver) where
+  pretty (NLit (i,_)) = PP.text "v" PP.<> PP.integer i
+instance PP.Pretty (BLiteral SMTLibSolver) where
+  pretty (BLit (i,_)) = PP.text "v" PP.<> PP.integer i

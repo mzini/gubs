@@ -5,6 +5,7 @@ module GUBS.Solver.MiniSMT (
 import           Prelude hiding (lookup)
 import           Text.Read hiding (Symbol,lift)
 
+import           Control.Applicative ((<|>))
 import qualified Control.Monad.State as St
 import           Control.Monad.Trans (MonadIO, liftIO, MonadTrans(..))
 import           Control.Monad.Trace
@@ -30,40 +31,55 @@ import           GUBS.Solver.Class
 
 data MiniSMT = MiniSMT
 
-newtype Symbol = Symbol Int deriving (Eq, Ord, Show)
+newtype Symbol = Symbol Int deriving (Eq, Ord)
+data SymbolType = BoolType | NatType deriving (Eq,Ord)
+
+instance Show Symbol where
+  show (Symbol i) = "v" ++ show i
+  
+instance Show SymbolType where
+  show BoolType = "Bool"
+  show NatType = "Nat"  
 
 type Assign = Map Symbol Integer
 
 lookup :: Symbol -> Assign -> Integer
 lookup s a = fromMaybe 0 (Map.lookup s a)
 
-          
-data Frame = Frame { fFreeVars :: Set Symbol
-                   , fConstraints :: [Formula (Exp MiniSMT)]}
+data Frame = Frame { fFreeVars    :: Set (Symbol,SymbolType)
+                   , fAssign      :: Maybe Assign
+                   , fConstraints :: [SMTFormula MiniSMT]}
 
 data SolverState = SolverState { freshId    :: Int
-                               , assign     :: Maybe Assign
                                , curFrame   :: Frame
                                , frameStack :: [Frame] }
 
-freeVars :: SolverState -> [Symbol]
+initialState :: SolverState
+initialState = SolverState { freshId = 0
+                           , curFrame = Frame Set.empty Nothing [] 
+                           , frameStack = [] }
+               
+assign :: SolverState -> Maybe Assign
+assign = fAssign . curFrame
+             
+freeVars :: SolverState -> [(Symbol, SymbolType)]
 freeVars = Set.toList . fFreeVars . curFrame
 
-constraints :: SolverState -> [Formula (Exp MiniSMT)]
+constraints :: SolverState -> [SMTFormula MiniSMT]
 constraints st = concatMap fConstraints (curFrame st : frameStack st)
 
 pushFrame :: SolverState -> SolverState
 pushFrame st@SolverState{..} =
-  st { curFrame = Frame (fFreeVars curFrame) []
+  st { curFrame = Frame (fFreeVars curFrame) (fAssign curFrame) []
      , frameStack = curFrame : frameStack }
 
 popFrame :: SolverState -> SolverState
 popFrame st =
   case frameStack st of
     [] -> error "MiniSMT: pop on empty stack"
-    f:fs -> st { curFrame = f, frameStack = fs }
+    f : fs -> st { curFrame = f { fAssign = fAssign (curFrame st) <|> fAssign f } , frameStack = fs }    
 
-addConstraint :: Formula (Exp MiniSMT) -> SolverState -> SolverState
+addConstraint :: SMTFormula MiniSMT -> SolverState -> SolverState
 addConstraint c st@SolverState{..} =
   st { curFrame = curFrame { fConstraints = c : fConstraints curFrame }}
 
@@ -103,34 +119,37 @@ sexpr es = charBS '(' <> hsep es <> charBS ')'
 app :: String -> [BS.Builder] -> BS.Builder
 app f es = sexpr (stringBS f : es)
   
-toScript :: [Symbol] -> [Formula (Exp MiniSMT)] -> BS.Builder
+toScript :: [(Symbol, SymbolType)] -> [SMTFormula MiniSMT] -> BS.Builder
 toScript vs cs =
   app "set-logic" [stringBS "QF_NIA"]
-  </> vsep [ app "declare-fun" [stringBS (show (Lit v)), sexpr [], stringBS "Nat"]
-           | v <- vs]
+  </> vsep [ app "declare-fun" [stringBS (show v), sexpr [], stringBS (show tpe)]
+           | (v,tpe) <- vs]
   </> vsep [ app "assert" [formToBS d] | d <- cs]
   </> app "check-sat" []
   where
-    formToBS Top           = stringBS "true"
-    formToBS Bot           = stringBS "false"
-    formToBS (Atom (Eq e1 e2))  = app "=" [ expressionToBS e1, expressionToBS e2 ]
-    formToBS (Atom (Geq e1 e2)) = app ">=" [ expressionToBS e1, expressionToBS e2 ]
-    formToBS (And f1 f2)   = app "and" [ formToBS f1, formToBS f2 ]
-    formToBS (Or f1 f2)    = app "or" [ formToBS f1, formToBS f2 ]    
+    formToBS Top                         = stringBS "true"
+    formToBS Bot                         = stringBS "false"
+    formToBS (Lit (BoolLit (BLit l)))    = stringBS (show l)
+    formToBS (Lit (NegBoolLit (BLit l))) = app "not" [stringBS (show l)]
+    formToBS (Atom (Eq e1 e2))           = app "=" [ expressionToBS e1, expressionToBS e2 ]
+    formToBS (Atom (Geq e1 e2))          = app ">=" [ expressionToBS e1, expressionToBS e2 ]
+    formToBS (And f1 f2)                 = app "and" [ formToBS f1, formToBS f2 ]
+    formToBS (Or f1 f2)                  = app "or" [ formToBS f1, formToBS f2 ]
+    -- TODO lets?
 
-    expressionToBS (Exp e) = polyToBS e where
-      add [] = integerBS 0
-      add [a] = a
-      add as = app "+" as
-      mul 0 _ = integerBS 0
-      mul c [] = integerBS c
-      mul 1 [a] = a
+    expressionToBS e = polyToBS e where
+      add []       = integerBS 0
+      add [a]      = a
+      add as       = app "+" as
+      mul 0 _      = integerBS 0
+      mul c []     = integerBS c
+      mul 1 [a]    = a
       mul (-1) [a] = app "-" [a]
-      mul 1 as = app "*" as
-      mul c as = app "*" (integerBS c : as)
+      mul 1 as     = app "*" as
+      mul c as     = app "*" (integerBS c : as)
       
       polyToBS (Poly.toMonos -> ms) = add [ monoToBS c m | (c,m) <- ms ]
-      monoToBS c (Poly.toPowers -> ps) = mul c (concat [ replicate e (stringBS (show v)) | (v,e) <- ps ])
+      monoToBS c (Poly.toPowers -> ps) = mul c (concat [ replicate e (stringBS (show v)) | (NLit v,e) <- ps ])
     
 
 -- result parser
@@ -140,17 +159,17 @@ parseOut :: String -> Maybe Assign
 parseOut out =
   case lines out of
     "sat" : _ : ls -> Just $ 
-      Map.fromList [ (case read var of Lit s -> s, read val)
+      Map.fromList [ (case read var of NLit s -> s, read val)
                    | l <- ls
                    , let (var,_:val) = break (== '=') (filter (/= ' ') l)]    
     _ -> Nothing
 
 -- minismt wrapper
 ----------------------------------------------------------------------
-runMiniSMT :: (MonadTrace String m, MonadIO m) => [Symbol] -> [Formula (Exp MiniSMT)] -> m (Maybe Assign)
+runMiniSMT :: (MonadTrace String m, MonadIO m) => [(Symbol,SymbolType)] -> [SMTFormula MiniSMT] -> m (Maybe Assign)
 runMiniSMT vs cs = do
   let script = toScript vs cs
-  logBlk "MiniSMT" (logMsg (ppScript script))
+  -- logBlk "MiniSMT" (logMsg (ppScript script))
   liftIO $ withSystemTempFile "smt" $ \file hfile -> do
     hSetBinaryMode hfile True
     BS.hPutBuilder hfile script
@@ -160,43 +179,41 @@ runMiniSMT vs cs = do
     case code of
       ExitFailure _ -> hPutStrLn stderr err >> return Nothing
       ExitSuccess   -> return (parseOut out)
-      where
-        ppScript = PP.vcat . map PP.text . map ("   " ++) . lines . unpack . BS.toLazyByteString
+      -- where
+      --   ppScript = PP.vcat . map PP.text . map ("   " ++) . lines . unpack . BS.toLazyByteString
+        
 -- SMTSolver instance
 ----------------------------------------------------------------------
 
-instance MonadTrans (SolverM MiniSMT) where
-  lift m = S (lift m)
+instance MonadTrans (SolverM MiniSMT) where lift m = S (lift m)
 
-instance Monad m => Supply (SolverM MiniSMT m) (Literal MiniSMT) where
-  fresh = do
+freshSymbol :: Monad m => SymbolType -> SolverM MiniSMT m Symbol
+freshSymbol tpe = do
     st@SolverState{..} <- St.get
     let sym = Symbol freshId
     St.put st { freshId = freshId + 1
-              , curFrame = curFrame { fFreeVars = Set.insert sym (fFreeVars curFrame) } }
-    return (Lit sym)
-  
+              , curFrame = curFrame { fFreeVars = Set.insert (sym,tpe) (fFreeVars curFrame) } }
+    return sym
+
 instance SMTSolver MiniSMT where
   data SolverM MiniSMT m a = S (St.StateT SolverState m a) deriving (Functor)
-  data Literal MiniSMT = Lit Symbol
-  data Exp MiniSMT = Exp (E.Expression (Literal MiniSMT))
+  data NLiteral MiniSMT = NLit Symbol
+  data BLiteral MiniSMT = BLit Symbol  
 
-  lit = Exp . E.variable
-  constnt = Exp . fromNatural
-  
-  toSolverExp = Exp
+  freshBool = BLit <$> freshSymbol BoolType
+  freshNat = NLit <$> freshSymbol NatType  
   
   push = St.modify pushFrame
   pop = St.modify popFrame
   assertFormula c = St.modify (addConstraint c) 
 
-  getValue (Lit s) = 
+  getValue (NLit s) = 
     maybe (error "model not available") (lookup s) <$> assign <$> St.get
 
   checkSat = do
     st <- St.get
     ma <- S (runMiniSMT (freeVars st) (constraints st))
-    St.modify (\ st -> st { assign = ma })
+    St.modify (\ st -> st {curFrame = (curFrame st) {fAssign = ma} })
     return (isJust ma)
     
   
@@ -212,36 +229,21 @@ instance Monad m => St.MonadState SolverState (SolverM MiniSMT m) where
   put s = S (St.put s)
   get = S St.get
 
-
-instance Show (Literal MiniSMT) where
-  show (Lit (Symbol i)) = "v" ++ show i
-
-instance PP.Pretty (Literal MiniSMT) where
-  pretty (Lit (Symbol i)) = PP.text "v" PP.<> PP.int i
-
-instance Read (Literal MiniSMT) where
+instance Read (NLiteral MiniSMT) where
   readPrec = get >>= readLit where
-    readLit 'v' = Lit <$> Symbol <$> readPrec
+    readLit 'v' = NLit <$> Symbol <$> readPrec
     readLit  _  = pfail
 
-deriving instance Eq (Literal MiniSMT)
-deriving instance Ord (Literal MiniSMT)
+instance Read (BLiteral MiniSMT) where
+  readPrec = get >>= readLit where
+    readLit 'v' = BLit <$> Symbol <$> readPrec
+    readLit  _  = pfail
 
-instance IsNat (Exp MiniSMT) where
-  fromNatural_ = Exp . fromNatural_
 
-instance Additive (Exp MiniSMT) where
-  zero = Exp zero
-  Exp e1 .+ Exp e2 = Exp (e1 .+ e2)
-
-instance Multiplicative (Exp MiniSMT) where
-  one = Exp one
-  Exp e1 .* Exp e2 = Exp (e1 .* e2)
+deriving instance Eq (NLiteral MiniSMT)
+deriving instance Ord (NLiteral MiniSMT)
+deriving instance Eq (BLiteral MiniSMT)
+deriving instance Ord (BLiteral MiniSMT)
 
 miniSMT :: (MonadTrace String m, MonadIO m) => SolverM MiniSMT m a -> m a
 miniSMT (S m) = St.evalStateT m initialState where
-  initialState = SolverState { freshId = 0
-                             , assign = Nothing
-                             , curFrame = initialFrame
-                             , frameStack = [] }
-  initialFrame = Frame { fFreeVars = Set.empty, fConstraints = [] }
