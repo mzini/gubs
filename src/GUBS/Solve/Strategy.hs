@@ -6,7 +6,8 @@ module GUBS.Solve.Strategy (
   , ExecutionLog
   , run
   , logMsg
-  , logBlk                       
+  , logBlk
+  , liftTrace
   , (==>)
   , (<==)  
   , (<=>)
@@ -47,6 +48,9 @@ instance MonadTrans (ProcT f c) where lift = ProcT . lift . lift
 
 run :: Monad m => Interpretation f c -> ProcT f c m a -> m (a, Interpretation f c, ExecutionLog)
 run i = liftM (\((a,i),l) -> (a,i,l)) . runTraceT .  flip runStateT i . runProcT_
+
+liftTrace :: Monad m => TraceT String m a -> ProcT f c m a
+liftTrace = ProcT . lift 
 
 getInterpretation :: Monad m => ProcT f c m (Interpretation f c)
 getInterpretation = get

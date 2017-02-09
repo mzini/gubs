@@ -1,6 +1,5 @@
 module GUBS.Solver.Class (
   SMTSolver (..)
-  , Solver
   , stack
   , evalM
   , F.BoolLit (..)
@@ -35,24 +34,22 @@ import qualified GUBS.Polynomial as Poly
 type SMTExpression s = E.Expression (NLiteral s)
 type SMTFormula s = F.Formula (BLiteral s) (SMTExpression s)
 
-class (Ord (NLiteral s), MonadTrans (SolverM s)) => SMTSolver s where
-  data SolverM s :: (* -> *) -> * -> *
+class (Monad (SolverM s), Ord (NLiteral s)) => SMTSolver s where
+  data SolverM s :: * -> *
   data NLiteral s :: *
   data BLiteral s :: *
 
-  freshBool :: Monad m => SolverM s m (BLiteral s)
-  freshNat  :: Monad m => SolverM s m (NLiteral s)
+  freshBool :: SolverM s (BLiteral s)
+  freshNat  :: SolverM s (NLiteral s)
   
-  push :: Monad m => SolverM s m ()
-  pop  :: Monad m => SolverM s m ()
+  push :: SolverM s ()
+  pop  :: SolverM s ()
 
-  assertFormula :: Monad m => SMTFormula s -> SolverM s m ()
-  checkSat :: (MonadIO m, MonadTrace String m) => SolverM s m Bool
-  getValue :: Monad m => NLiteral s -> SolverM s m Integer
+  assertFormula :: SMTFormula s -> SolverM s ()
+  checkSat :: SolverM s Bool
+  getValue :: NLiteral s -> SolverM s Integer
 
-type Solver s m = (SMTSolver s, MonadIO m, Monad (SolverM s m))
-
-assert :: (Solver s m) => SMTFormula s -> SolverM s m ()
+assert :: SMTSolver s => SMTFormula s -> SolverM s ()
 assert = letElim >=> assertFormula where
   letElim F.Top = return F.Top
   letElim F.Bot = return F.Bot
@@ -94,9 +91,9 @@ smtFactorIEQ eq e1 e2 =
     Just ((_,m), [e1',e2']) -> F.smtBigOr ([ Poly.variable v `F.eqA` fromNatural 0 | v <- Poly.monoVariables m] ++ [e1' `eq` e2'])
     _ -> e1 `eq` e2
     
-stack :: Solver s m => SolverM s m a -> SolverM s m a
+stack :: SMTSolver s => SolverM s a -> SolverM s a
 stack m = push *> m <* pop
 
-evalM :: Solver s m => SMTExpression s -> SolverM s m Integer
+evalM :: SMTSolver s => SMTExpression s -> SolverM s Integer
 evalM = E.evalWithM getValue
 

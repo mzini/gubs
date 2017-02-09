@@ -166,10 +166,9 @@ parseOut out =
 
 -- minismt wrapper
 ----------------------------------------------------------------------
-runMiniSMT :: (MonadTrace String m, MonadIO m) => [(Symbol,SymbolType)] -> [SMTFormula MiniSMT] -> m (Maybe Assign)
+runMiniSMT :: MonadIO m => [(Symbol,SymbolType)] -> [SMTFormula MiniSMT] -> m (Maybe Assign)
 runMiniSMT vs cs = do
   let script = toScript vs cs
-  -- logBlk "MiniSMT" (logMsg (ppScript script))
   liftIO $ withSystemTempFile "smt" $ \file hfile -> do
     hSetBinaryMode hfile True
     BS.hPutBuilder hfile script
@@ -185,9 +184,7 @@ runMiniSMT vs cs = do
 -- SMTSolver instance
 ----------------------------------------------------------------------
 
-instance MonadTrans (SolverM MiniSMT) where lift m = S (lift m)
-
-freshSymbol :: Monad m => SymbolType -> SolverM MiniSMT m Symbol
+freshSymbol :: SymbolType -> SolverM MiniSMT Symbol
 freshSymbol tpe = do
     st@SolverState{..} <- St.get
     let sym = Symbol freshId
@@ -196,8 +193,8 @@ freshSymbol tpe = do
     return sym
 
 instance SMTSolver MiniSMT where
-  data SolverM MiniSMT m a = S (St.StateT SolverState m a) deriving (Functor)
-  data NLiteral MiniSMT = NLit Symbol
+  data SolverM MiniSMT a = S (St.StateT SolverState IO a) deriving (Functor)
+  data NLiteral MiniSMT = NLit Symbol deriving (Eq, Ord)
   data BLiteral MiniSMT = BLit Symbol  
 
   freshBool = BLit <$> freshSymbol BoolType
@@ -217,15 +214,15 @@ instance SMTSolver MiniSMT where
     return (isJust ma)
     
   
-instance Monad m => Applicative (SolverM MiniSMT m) where
+instance Applicative (SolverM MiniSMT) where
   pure a = S (pure a)
   S a1 <*> S a2 = S (a1 <*> a2)
 
-instance Monad m => Monad (SolverM MiniSMT m) where
+instance Monad (SolverM MiniSMT) where
   return a = S (return a)
   S m >>= f = S (m >>= \ a -> case f a of S m2 -> m2)
 
-instance Monad m => St.MonadState SolverState (SolverM MiniSMT m) where
+instance St.MonadState SolverState (SolverM MiniSMT) where
   put s = S (St.put s)
   get = S St.get
 
@@ -239,11 +236,5 @@ instance Read (BLiteral MiniSMT) where
     readLit 'v' = BLit <$> Symbol <$> readPrec
     readLit  _  = pfail
 
-
-deriving instance Eq (NLiteral MiniSMT)
-deriving instance Ord (NLiteral MiniSMT)
-deriving instance Eq (BLiteral MiniSMT)
-deriving instance Ord (BLiteral MiniSMT)
-
-miniSMT :: (MonadTrace String m, MonadIO m) => SolverM MiniSMT m a -> m a
+miniSMT :: SolverM MiniSMT a -> IO a
 miniSMT (S m) = St.evalStateT m initialState where
