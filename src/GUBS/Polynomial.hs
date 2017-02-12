@@ -31,8 +31,12 @@ fromPowers = Mono . MS.fromOccurList
 toPowers :: Monomial v -> [(v,Int)]
 toPowers (Mono m) = MS.toOccurList m
 
+unitMono :: Monomial v
+unitMono = Mono MS.empty
+
 fromMono :: IsNat c => Monomial v -> Polynomial v c 
 fromMono m = Poly (M.singleton m (fromNatural 1))
+
 
 
 monoVariables :: Ord v => Monomial v -> [v]

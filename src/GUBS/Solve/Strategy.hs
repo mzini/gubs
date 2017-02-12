@@ -107,7 +107,7 @@ timed p cs = do
   logMsg ("Staring timer: " ++ show start)
   r <- p cs
   end <- liftIO getCurrentTime
-  logMsg ("Stopping timer: " ++ show end ++ "("++ show (diffUTCTime end start) ++")")
+  logMsg ("Stopping timer: " ++ show end ++ "(+"++ show (diffUTCTime end start) ++")")
   return r
 
 try :: Monad m => Processor f c v m -> Processor f c v m

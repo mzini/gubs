@@ -132,13 +132,15 @@ getCInter = do (_,ci,_) <- get; return ci
 freshPoly :: SMTSolver s => Int -> SMT s f (AbstractMaxPoly s I.Var)
 freshPoly ar = do
   SMTOpts {..} <- getOpts
+  let t = template shape degree
   if maxPoly
     then do
-    p1 <- polyFromTemplate (template shape degree)
-    p2 <- polyFromTemplate (template shape degree)
-    liftSMT (exclusive p1 p2)
+    p1 <- polyFromTemplate t
+    p2 <- polyFromTemplate t
+    -- p3 <- polyFromTemplate t
+    liftSMT (exclusive p1 p2) --TODO
     return (toMaxPoly p1 `maxA` toMaxPoly p2)
-    else toMaxPoly <$> polyFromTemplate (template shape degree)
+    else toMaxPoly <$> polyFromTemplate t
   where
     template MultMixed degree = [ [ (v,1) | v <- ms] | ms <- subsequences (take ar I.variables)
                                                      , length ms <= degree ]
@@ -154,7 +156,7 @@ freshPoly ar = do
 
     exclusive p1 p2 = assert $ smtBigAnd
       [ (c1 `smtEq` fromNatural 0) `smtOr` (c2 `smtEq` fromNatural 0)
-      | (c1,m) <- P.toMonos p1, let c2 = P.coefficientOf m p2]
+      | (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
     toMaxPoly = P.fromPolynomial MP.variable MP.constant
     polyFromTemplate tp = do
       SMTOpts {..} <- getOpts
@@ -202,8 +204,16 @@ fromAssignment :: SMTSolver s => AbstractInterpretation s f -> SMT s f (Interpre
 fromAssignment i = I.mapInter MP.simp <$> liftSMT (traverse evalM i)
 
 minimizeM :: (PP.Pretty f, Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMTMinimization -> SMT s f (Interpretation f Integer)
-minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (walkS ms)) where
+minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (getCurrentInterpretation >>= logMsg >> walkS ms)) where
 
+  stateFromModel = do
+    ainter <- getAInter
+    let cs = concatMap MP.coefficients (I.image ainter)
+    (,) <$> fromAssignment ainter <*> sequence [ (,) c <$> liftSMT (evalM c) | c <- cs ]
+  
+  getCurrentInterpretation = fst <$> get
+  getCurrentCoefficients   = snd <$> get
+  
   walkS Success          = return True
   walkS (Try m)          = walkS m >> return True
   walkS (SMTMinimize mm) = minimizeWith mm
@@ -212,49 +222,49 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (walkS ms)) where
     if cont then walkS m2 else return False
     
   minimizeWith mm = do
-    cinter <- getCurrentInterpretation
-    lift $ do
-      liftSMT push
-      logMsg (PP.text "current interpretation:" PP.<$$> PP.indent 3 (PP.align (PP.pretty cinter)))
-      logMsg ("minimizing with " ++ show mm ++ " ...")
-    constraintWith mm >>= lift . liftSMT . assert
-    check <* lift (liftSMT pop)
-    -- ifM check (return True) (lift (liftSMT pop) >> return False)
+    cstrt <- constraintWith mm
+    success <- lift $ liftSMT $ push >> assert cstrt >> checkSat
+    if success
+      then do
+        lift stateFromModel >>= put
+        lift $ logMsg (PP.text "Minimizing with " PP.<+> PP.text (show mm) PP.<+> PP.text  "...")
+        getCurrentInterpretation >>= logMsg
+      else lift (logMsg ("Minimizing with " ++ show mm ++ "... Failed" ))
+    lift $ liftSMT pop
+    return success
 
-  constraintWith DecreaseCoeff =  do
-    ainter <- lift getAInter
-    cinter <- getCurrentInterpretation
-    return (fromNatural (coeffSum cinter - 1) `smtGeq` coeffSum ainter)
-    where 
-      coeffSum i = sumA [ sumA (MP.coefficients p) | (fi,p) <- I.toList i]
   constraintWith ZeroOut = do
     bs <- getCurrentCoefficients
-    return $ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- bs ]
-             `smtAnd` smtBigOr [ zero `smtEq` c | (c,v) <- bs, v > 0 ]
+    return $ smtBigAnd [ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- bs ]
+                       , smtBigOr [ zero `smtEq` c | (c,v) <- bs, v > 0 ] ]
+  constraintWith DecreaseCoeff =  do
+    bs <- getCurrentCoefficients
+    return $ smtBigAnd [ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- bs ]
+                       , smtBigOr [ fromNatural (v - 1) `smtGeq` c | (c,v) <- bs, v > 0 ] ]
   constraintWith ShiftMax = do
     ainter <- lift getAInter
     cs <- getCurrentCoefficients
     return (smtBigOr [ shiftMax cs (MP.splitMax p) | p <- I.image ainter])
       where
-        shiftMax cs ps = smtBigOr [ smtBigAnd [ c' `smtEq` fromNatural 0
-                                              , fromNatural v `smtGeq` c
-                                              , c `smtGeq` fromNatural 1]
-                                  | p <- ps, isNull p, (c',v,m) <- monos, let c = P.coefficientOf m p ]
+        shiftMax cs ps = smtBigOr [ smtBigAnd [ fromNatural v `smtGeq` c, c `smtGeq` fromNatural 1
+                                              , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
+                                                          | (c',m') <- concatMap P.toMonos ps
+                                                          , m' /= P.unitMono
+                                                          , c' /= c] ]
+                                  | (c,v) <- candidates ]
           where
-            monos = [ (c,v,m) | p <- ps, (c,m) <- P.toMonos p, let Just v = lookup c cs, v > 0 ]
-            isNull p = and [ v == 0 | c <- P.coefficients p, let Just v = lookup c cs ]
-  getCurrentInterpretation = fst <$> get
-  getCurrentCoefficients   = snd <$> get
-
-  stateFromModel = do
-    ainter <- getAInter
-    let cs = concatMap MP.coefficients (I.image ainter)
-    (,) <$> fromAssignment ainter <*> sequence [ (,) c <$> liftSMT (evalM c) | c <- cs ]
-  
---  cs = 
-
-  check = ifM (lift (liftSMT checkSat)) (lift stateFromModel >>= put >> return True) (return False)
-    
+            coeffVal c = fromJust (lookup c cs)
+            coeffs p = [ (c,m) | (c,m) <- P.toMonos p, let v = coeffVal c, v > 0]
+            candidates = concatMap f ps
+              where
+                f p = [ (c,maximum [ coeffVal (P.coefficientOf m p') | p' <- ps])
+                      | (c,m) <- P.toMonos p
+                      , m /= P.unitMono
+                      , coeffVal c == 0
+                      , any (\ p' -> length (dropCoeff m (coeffs p')) > length (coeffs p)) ps
+                      ]
+                dropCoeff m = filter (\ (_,m') -> m /= m')
+     
 
 solveM :: (PP.Pretty f, Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMT s f (Maybe (Interpretation f Integer))
 solveM cs = do
