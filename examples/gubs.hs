@@ -26,14 +26,13 @@ processor =
     simple =
       logAs "SOLVE" $ timed $ withLog $
         try simplify
-        ==> try (smt' "SMT-MI(3)" smtOpts { shape = Mixed, degree = 3})
-        -- ==> try (smt' "SMT-MSLI"   smtOpts { degree = 1, maxCoeff = Just 1, maxPoly = True })
-        -- ==> try (smt' "SMT-SLI"    smtOpts { degree = 1, maxCoeff = Just 1 })
-        -- ==> try (smt' "SMT-LI"     smtOpts { degree = 1 })
-        -- ==> try (smt' "SMT-MMI(2)" smtOpts { degree = 2})
-        -- ==> try (smt' "SMT-MI(2)"  smtOpts { degree = 2, shape = Mixed})
-        -- ==> try (smt' "SMT-MMI(3)" smtOpts { degree = 3})
-        -- ==> try (smt' "SMT-MI(3)"  smtOpts { degree = 4, shape = Mixed})
+        ==> try (smt' "SMT-MSLI"   smtOpts { degree = 1, maxCoeff = Just 1, maxPoly = True })
+        ==> try (smt' "SMT-SLI"    smtOpts { degree = 1, maxCoeff = Just 1 })
+        ==> try (smt' "SMT-LI"     smtOpts { degree = 1 })
+        ==> try (smt' "SMT-MMI(2)" smtOpts { degree = 2})
+        ==> try (smt' "SMT-MI(2)"  smtOpts { degree = 2, shape = Mixed})
+        ==> try (smt' "SMT-MMI(3)" smtOpts { degree = 3})
+        ==> try (smt' "SMT-MI(3)"  smtOpts { degree = 4, shape = Mixed})
     smt' n o = logAs n $ timed $ smt smtSolver o
     simplify = 
       logAs "Simplification" $
