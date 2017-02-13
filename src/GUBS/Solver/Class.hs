@@ -80,8 +80,8 @@ simpGeq e1 e2 = e1 `F.geqA` e2
 
 
 smtEq,smtGeq :: SMTSolver s => SMTExpression s -> SMTExpression s -> SMTFormula s
--- smtEq e1 e2 = Eq (toSolverExp e1) (toSolverExp e2)
--- smtGeq e1 e2 = Geq (toSolverExp e1) (toSolverExp e2)
+-- smtEq = simpEq
+-- smtGeq = simpGeq
 smtEq = smtFactorIEQ simpEq
 smtGeq = smtFactorIEQ simpGeq
 

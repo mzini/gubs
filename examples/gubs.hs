@@ -9,31 +9,38 @@ import System.Exit (exitSuccess, exitFailure)
 import Data.Tree (drawTree, Tree (..))
 
 
-processor =
-  logCS ==> try simplify ==> logCS ==> try (exhaustive (sccDecompose (logCS ==> try simplify ==> simple)))
-  where
-    logCS cs = logOpenConstraints cs >> return (Progress cs)
-    logStr str cs = logMsg str >> return (Progress cs)
-    simple =
-      logStr "SMT: trying strongly linear interpretation"
-      ==> try (smt' defaultSMTOpts { degree = 1, maxCoeff = Just 1} )
-      ==> logStr "SMT: trying linear interpretation"      
-      ==> try (smt' defaultSMTOpts { degree = 1 })
-      ==> logStr "SMT: trying strongly multmixed interpretation"            
-      ==> try (smt' defaultSMTOpts { degree = 2, maxCoeff = Just 1})
-      ==> logStr "SMT: trying multmixed interpretation"            
-      ==> try (smt' defaultSMTOpts { degree = 2, maxCoeff = Nothing})
-      ==> logStr "SMT: trying mixed interpretation"                  
-      ==> try (smt' defaultSMTOpts { degree = 2, shape = Mixed, maxCoeff = Nothing})
-      ==> logStr "SMT: trying multmixed interpretation of degree 3"            
-      ==> try (smt' defaultSMTOpts { degree = 3, maxCoeff = Nothing})
-      ==> logStr "SMT: trying multmixed interpretation of degree 3"            
-      ==> try (smt' defaultSMTOpts { degree = 3, shape = Mixed, maxCoeff = Nothing})
-    smt' = smt MiniSmt
-    simplify =
-      try instantiate
-      ==> try (exhaustive (propagateUp <=> propagateDown))
+smtOpts :: SMTOpts
+smtOpts = defaultSMTOpts { minimize = tryM (iterM 3 zeroOut) `andThenM` tryM (iterM 3 shiftMax) `andThenM` iterM 3 decreaseCoeffs }
 
+smtSolver :: Solver
+smtSolver = Z3 -- MiniSmt
+
+processor :: Processor Symbol Integer Variable IO
+processor =
+  withLog (try simplify) ==> try (exhaustive (logAs "SCC" (sccDecompose simple)))
+  where
+    withLog p cs = 
+      logOpenConstraints cs *> p cs <* logInterpretation cs <* logConstraints cs
+      
+    logAs str p cs = logBlk (str++"...") (p cs)
+    simple =
+      logAs "SOLVE" $ timed $ withLog $
+        try simplify
+        ==> try (smt' "SMT-MI(3)" smtOpts { shape = Mixed, degree = 3})
+        -- ==> try (smt' "SMT-MSLI"   smtOpts { degree = 1, maxCoeff = Just 1, maxPoly = True })
+        -- ==> try (smt' "SMT-SLI"    smtOpts { degree = 1, maxCoeff = Just 1 })
+        -- ==> try (smt' "SMT-LI"     smtOpts { degree = 1 })
+        -- ==> try (smt' "SMT-MMI(2)" smtOpts { degree = 2})
+        -- ==> try (smt' "SMT-MI(2)"  smtOpts { degree = 2, shape = Mixed})
+        -- ==> try (smt' "SMT-MMI(3)" smtOpts { degree = 3})
+        -- ==> try (smt' "SMT-MI(3)"  smtOpts { degree = 4, shape = Mixed})
+    smt' n o = logAs n $ timed $ smt smtSolver o
+    simplify = 
+      logAs "Simplification" $
+        try instantiate
+        ==> try eliminate
+        ==> try (exhaustive (propagateUp <=> propagateDown))
+        
 main :: IO ()
 main = do
   parsed <- csFromFile =<< (head <$> getArgs)

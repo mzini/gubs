@@ -133,6 +133,7 @@ freshPoly :: SMTSolver s => Int -> SMT s f (AbstractMaxPoly s I.Var)
 freshPoly ar = do
   SMTOpts {..} <- getOpts
   let t = template shape degree
+  logMsg (show t)
   if maxPoly
     then do
     p1 <- polyFromTemplate t
@@ -266,15 +267,15 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (getCurrentInterpretati
                 dropCoeff m = filter (\ (_,m') -> m /= m')
      
 
-solveM :: (PP.Pretty f, Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMT s f (Maybe (Interpretation f Integer))
+solveM :: (PP.Pretty f, PP.Pretty v, PP.Pretty (NLiteral s), Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMT s f (Maybe (Interpretation f Integer))
 solveM cs = do
-  ieqs <- sequence $
-    [(:>=:) <$> interpret l <*> interpret r | (l :>=: r) <- cs ]
+  ieqs <- sequence [(:>=:) <$> interpret l <*> interpret r | (l :>=: r) <- cs ]
+  mapM_ (logMsg . fmap (map P.toMonos. MP.splitMax)) ieqs
   mapM_ (liftSMT . assert . F.subst dio . maxElim) ieqs
   mo <- minimize <$> getOpts
   ifM (liftSMT checkSat) (Just <$> minimizeM cs mo) (return Nothing)
   where
-    dio (Geq l r) = smtBigAnd [ (p `smtGeq` q) | (p :>=: q) <- P.absolutePositive (l `P.minus` r) ]
+    dio (Geq l r) = smtBigAnd [ p `smtGeq` q | (p :>=: q) <- P.absolutePositive (l `P.minus` r) ]
 
 
 smt :: (PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => Solver -> SMTOpts -> Processor f Integer v m

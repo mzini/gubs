@@ -236,5 +236,10 @@ instance Read (BLiteral MiniSMT) where
     readLit 'v' = BLit <$> Symbol <$> readPrec
     readLit  _  = pfail
 
+instance PP.Pretty (NLiteral MiniSMT) where
+  pretty (NLit l) = PP.text (show l)
+instance PP.Pretty (BLiteral MiniSMT) where
+  pretty (BLit l) = PP.text (show l)
+
 miniSMT :: SolverM MiniSMT a -> IO a
-miniSMT (S m) = St.evalStateT m initialState where
+miniSMT (S m) = St.evalStateT m initialState

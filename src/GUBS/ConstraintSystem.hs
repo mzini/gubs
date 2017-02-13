@@ -7,7 +7,7 @@ import qualified GUBS.Term as T
 import           GUBS.Utils
 
 import           Control.Monad.IO.Class
-import           Control.Monad (join)
+import           Control.Monad (join, void)
 import           System.IO 
 import           Data.Char (digitToInt)
 import           Data.List (nub,foldl')
@@ -39,8 +39,7 @@ sccs cs = map flattenSCC sccs'
     ecs = zip [0 ..] cs
     -- succs c@(l :=: r) = succs (l :>=: r) ++ succs (r :>=: l)
     succs c@(l :>=: r) = [ j | (j, c') <- ecs
-                             , any (`elem` (funs c)) (T.funs (C.lhs c')) ]
-
+                             , any (`elem` funs c) (T.funs (C.lhs c')) ]
 
 -- pretty printing
 
@@ -70,7 +69,7 @@ lexeme :: Parser a -> Parser a
 lexeme p = p <* many whiteSpace1
 
 literal :: String -> Parser ()
-literal s = lexeme (string s) >> return ()
+literal s = void (lexeme (string s))
 
 identifier :: Parser String
 identifier = lexeme (many (try alphaNum <|> oneOf "'_/#?*+-"))
@@ -80,16 +79,13 @@ natural = lexeme (foldl' (\a i -> a * 10 + digitToInt i) 0 <$> many1 digit)
 
 term :: Parser (T.Term Symbol Variable)
 term = try constant <|> parens (try var <|> compound) where
-  var = literal "var" >> (T.Var <$> Variable <$> identifier)
-  constant = fromNatural <$> fromIntegral <$> natural
+  var = literal "var" >> (T.Var . Variable <$> identifier)
+  constant = fromNatural . fromIntegral <$> natural
   compound = join (toTerm <$> identifier <*> many (lexeme term))
   toTerm f ts | f `notElem` ["*","+","max"] = return (T.Fun (Symbol f) ts)
-  toTerm "*" [t1,t2] = return (t1 .* t2)
-  toTerm "+" [t1,t2] = return (t1 .+ t2)
-  toTerm "max" [t1,t2] = return (t1 `maxA` t2)
-  -- toTerm "neg" [t] = return (neg t)
-  -- toTerm "-" [t1,t2] = return (t1 - t2)
-  toTerm f _ = parserFail $ "Unexpected number of arguments for operation '" ++ show f ++ "'"
+  toTerm "*" ts  = return (prod ts)
+  toTerm "+" ts  = return (sumA ts)
+  toTerm "max" ts  = return (maximumA ts)
   
 constraint :: Parser (TermConstraint Symbol Variable)
 constraint = parens $ do
@@ -103,7 +99,7 @@ constraintSystem = many (lexeme constraint)
 csFromFile :: MonadIO m => FilePath -> m (Either ParseError (ConstraintSystem Symbol Variable))
 csFromFile file = runParser parse () sn <$> liftIO (readFile file) where
   sn = "<file " ++ file ++ ">"
-  parse = many (whiteSpace1) *> constraintSystem <* eof
+  parse = many whiteSpace1 *> constraintSystem <* eof
 
 csToFile :: (MonadIO m, PP.Pretty f, PP.Pretty v) => ConstraintSystem f v -> FilePath -> m ()
 csToFile cs f = liftIO $ do

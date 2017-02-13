@@ -17,8 +17,6 @@ class Additive a => Max a where
   maximumA = foldr maxA zero
 
 
-(.^) :: (Additive a, Integral b) => a -> b -> a
-a .^ b = sumA (replicate (fromIntegral b) a)
   
 class Additive a => AdditiveGroup a where
   neg    :: a -> a
@@ -32,6 +30,9 @@ class Multiplicative a where
   
   prod :: Foldable f => f a -> a
   prod = foldr (.*) one
+
+  (.^) :: Integral b => a -> b -> a
+  a .^ b = prod (replicate (fromIntegral b) a)
 
 type SemiRing a = (Additive a,      Multiplicative a)
 type Ring  a    = (AdditiveGroup a, Multiplicative a)

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 module GUBS.Solver.SMTLib (
   z3
+  , z3'
   ) where
 
 import GUBS.Algebra
@@ -10,6 +11,7 @@ import qualified GUBS.MaxPolynomial as MP
 import qualified GUBS.Solver.Formula as F
 import qualified Language.SMTLib2 as SMT
 import qualified Language.SMTLib2.Pipe as SMT
+import qualified Language.SMTLib2.Debug as SMT
 
 import Control.Monad.State.Strict
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
@@ -103,4 +105,9 @@ instance PP.Pretty (BLiteral (SMTLibSolver b)) where
 z3 :: SolverM (SMTLibSolver SMT.SMTPipe) a -> IO a
 z3 (S m) = SMT.withBackend (SMT.createPipe "z3" ["-smt2","-in"]) (setLIA >> evalStateT m 0) where
   setLIA = SMT.setOption (SMT.SMTLogic "QF_NIA")
+
+z3' :: SolverM (SMTLibSolver (SMT.DebugBackend SMT.SMTPipe)) a -> IO a
+z3' (S m) = SMT.withBackend (SMT.debugBackend <$> SMT.createPipe "z3" ["-smt2","-in"]) (setLIA >> evalStateT m 0) where
+  setLIA = SMT.setOption (SMT.SMTLogic "QF_NIA")
+
 

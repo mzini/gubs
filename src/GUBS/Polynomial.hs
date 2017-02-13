@@ -81,7 +81,7 @@ rename :: Ord v' => (v -> v') -> Polynomial v c -> Polynomial v' c
 rename f (Poly ms) = Poly (M.mapKeys (\ (Mono m) -> Mono (MS.map f m)) ms)
 
 norm :: (IsNat c, Eq c) => Polynomial v c -> Polynomial v c
-norm (Poly ms) = Poly (M.filter ((/=) (fromNatural 0)) ms)
+norm (Poly ms) = Poly (M.filter (fromNatural 0 /=) ms)
 
 isZero :: (Eq c, IsNat c) => Polynomial v c -> Bool
 isZero p = and [ c == fromNatural 0 || null (toPowers m) | (c,m) <- toMonos p ]
@@ -115,9 +115,9 @@ factorise (fmap (toMonos . norm) -> ps)
 
     factor p = fromMonos [ (c `div` cf, Mono (m MS.\\ msf))  | (c, Mono m) <- p]
     
-    leq1 []       = True
-    leq1 (_ : []) = True
-    leq1 _        = False
+    leq1 []  = True
+    leq1 [_] = True
+    leq1 _   = False
 
 substitute :: (Ord v', IsNat c, SemiRing c) => (v -> Polynomial v' c) -> Polynomial v c -> Polynomial v' c 
 substitute s p = sumA [ substMono m | (_,m) <- toMonos p]
