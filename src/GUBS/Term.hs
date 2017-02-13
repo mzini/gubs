@@ -136,7 +136,7 @@ instance (PP.Pretty f, PP.Pretty v) => PrettySexp (Term f v) where
 interpretM :: (Max a, SemiRing a, IsNat a, Monad m) => (v -> m a) -> (f -> [a] -> m a) -> Term f v -> m a
 interpretM s _ (Var v)      = s v
 interpretM _ _ (Const c)    = pure (fromNatural c)
-interpretM s i (Fun f ts)   = i f =<< interpretM s i `mapM` ts where
+interpretM s i (Fun f ts)   = i f =<< interpretM s i `mapM` ts
 interpretM s i (Plus t1 t2) = (.+) <$> interpretM s i t1 <*> interpretM s i t2
 interpretM s i (Max t1 t2)  = maxA <$> interpretM s i t1 <*> interpretM s i t2
 interpretM s i (Mult t1 t2) = (.*) <$> interpretM s i t1 <*> interpretM s i t2

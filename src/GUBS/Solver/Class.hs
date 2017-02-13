@@ -48,6 +48,7 @@ class (Monad (SolverM s), Ord (NLiteral s)) => SMTSolver s where
   assertFormula :: SMTFormula s -> SolverM s ()
   checkSat :: SolverM s Bool
   getValue :: NLiteral s -> SolverM s Integer
+  
 
 assert :: SMTSolver s => SMTFormula s -> SolverM s ()
 assert = letElim >=> assertFormula where

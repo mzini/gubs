@@ -274,7 +274,7 @@ solveM cs = do
   mo <- minimize <$> getOpts
   ifM (liftSMT checkSat) (Just <$> minimizeM cs mo) (return Nothing)
   where
-    dio (Geq l r) = smtBigAnd [ (p `smtGeq` q) | (p :>=: q) <- P.strictlyPositive (l `P.minus` r) ]
+    dio (Geq l r) = smtBigAnd [ (p `smtGeq` q) | (p :>=: q) <- P.absolutePositive (l `P.minus` r) ]
 
 
 smt :: (PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => Solver -> SMTOpts -> Processor f Integer v m

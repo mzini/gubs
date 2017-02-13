@@ -75,7 +75,7 @@ propagateUp = propagateUp' ==> partiallyInterpret where
       where
         dsym = T.definedSymbol . C.lhs
         toProgress cs cs' = if length cs > length cs' then Progress cs' else NoProgress
-        propagate i [(Fun f ts) :>=: b] 
+        propagate i [Fun f ts :>=: b] 
           | Just s <- renaming ts I.variables
           , Just p <- I.interpret i b 
           , Nothing <- I.get i f ar

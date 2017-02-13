@@ -188,8 +188,8 @@ type DiffPolynomial v c = Polynomial v (Diff c)
 toDiffPoly :: Additive c => Polynomial v c -> DiffPolynomial v c
 toDiffPoly = fmap toDiff 
 
-strictlyPositive :: DiffPolynomial v c -> [Constraint c]
-strictlyPositive p = [ posAC c :>=: negAC c | c <- coefficients p]
+absolutePositive :: DiffPolynomial v c -> [Constraint c]
+absolutePositive p = [ posAC c :>=: negAC c | c <- coefficients p ]
  
 minus :: (IsNat c, Additive c, Ord v) => Polynomial v c -> Polynomial v c -> DiffPolynomial v c
 p1 `minus` p2 = toDiffPoly p1 .- toDiffPoly p2 

@@ -62,13 +62,6 @@ instance (Eq c, Additive c, Multiplicative c) => Multiplicative (MaxPoly v c) wh
 
 -- operations
 
--- rename :: (v -> v') -> MaxPoly v c -> MaxPoly v' c
--- rename f (Var v) = Var (f v)
--- rename _ (Const c) = Const c
--- rename f (Plus p q) = rename f p `Plus` rename f q
--- rename f (Mult p q) = rename f p `Mult` rename f q
--- rename f (Max p q)  = rename f p `Max` rename f q
-
 fromMaxPoly :: (Max a, SemiRing a) => (v -> a) -> (c -> a) -> MaxPoly v c -> a
 fromMaxPoly var _   (Var v)    = var v
 fromMaxPoly _   con (Const c)  = con c
@@ -139,7 +132,7 @@ simp = fromPolyList . filterSubsumed . nub . splitMax where --
   -- TODO  max(x0 + x1 + x2,1 + x0)
   filterSubsumed ps = foldr (\ p -> filter (not . subsumes p)) ps ps
   p1 `subsumes` p2 =
-    and [ c1 >= c2 | (c1 :>=: c2) <- P.strictlyPositive (p1 `P.minus` p2)]
+    and [ c1 >= c2 | (c1 :>=: c2) <- P.absolutePositive (p1 `P.minus` p2)]
     && p1 /= p2
 
 instance (Eq c, Eq v, IsNat c, Max c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
