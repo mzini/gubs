@@ -1,5 +1,7 @@
 module GUBS.Solver.Formula where
 
+import Data.Foldable (toList)
+
 import GUBS.Algebra
 
 data Atom e = Geq e e | Eq e e
@@ -78,6 +80,11 @@ smtBigOr, smtBigAnd :: [Formula l e] -> Formula l e
 smtBigOr = foldr smtOr smtBot
 smtBigAnd = foldr smtAnd smtTop
 
+smtAll, smtAny :: Foldable t => (a -> Formula l e) -> t a -> Formula l e
+smtAll f t = smtBigAnd [ f a | a <- toList t]
+smtAny f t = smtBigOr [ f a | a <- toList t]
+
+
 letB ::  Formula l e -> (l -> Formula l e) -> Formula l e
 letB = LetB
 
@@ -85,3 +92,5 @@ letB' :: [Formula l e] -> ([l] -> Formula l e) -> Formula l e
 letB' = walk [] where
   walk ls [] f = f (reverse ls)
   walk ls (e:es) f = LetB e (\ l -> walk (l:ls) es f)
+
+

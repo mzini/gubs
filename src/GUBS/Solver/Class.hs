@@ -16,6 +16,8 @@ module GUBS.Solver.Class (
   , F.smtAnd  
   , F.smtBigOr
   , F.smtBigAnd
+  , F.smtAll
+  , F.smtAny
   , smtEq
   , smtGeq
   ) where

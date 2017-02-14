@@ -42,8 +42,6 @@ import           GUBS.Solve.Strategy (Processor, Interpretation, Result (..), mo
 import           GUBS.Solver
 import qualified GUBS.Solver.Formula as F
 
--- TODO remove
-import GUBS.Utils (tracePretty)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- options
@@ -135,11 +133,9 @@ freshPoly ar = do
   let t = template shape degree
   if maxPoly
     then do
-    p1 <- polyFromTemplate t
-    p2 <- polyFromTemplate t
-    -- p3 <- polyFromTemplate t
-    liftSMT (exclusive p1 p2) --TODO
-    return (toMaxPoly p1 `maxA` toMaxPoly p2)
+    ps <- replicateM (min ar 3) (polyFromTemplate t)
+    liftSMT (exclusive ps)
+    return (maximumA [toMaxPoly p | p <- ps])
     else toMaxPoly <$> polyFromTemplate t
   where
     template MultMixed degree = [ [ (v,1) | v <- ms] | ms <- subsequences (take ar I.variables)
@@ -154,14 +150,15 @@ freshPoly ar = do
             | v == v' = (v',i+1) : mono
             | otherwise = (v',i) : v `mult` mono
 
-    exclusive p1 p2 = assert $
-      smtBigAnd [ smtBigOr [ (c1 `smtEq` zero) `smtAnd` (c2 `smtEq` zero)
-                           , c1 `smtGeq` s c2
-                           , c2 `smtGeq` s c1 ]
-                | (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
-      where s = (.+) (fromNatural 1)
+    exclusive ps = assert $ 
+      smtBigAnd [ smtAll (smtEq zero . fst) ms `smtOr` smtAny dominating ms
+                | p <- ps, let ms = [(c,m) | (c,m) <- P.toMonos p, m /= P.unitMono]]
+      where
+        dominating (c,m) = smtBigAnd [ c `smtGeq` (c' .+ fromNatural 1) | c' <- coeffs M.! m, c /= c' ]
+        coeffs = M.unionsWith (++) [ (: []) `fmap` P.toMonoMap p | p <- ps]
+      
       -- [ (c1 `smtEq` fromNatural 0) `smtOr` (c2 `smtEq` fromNatural 0)
-      -- | (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
+      -- -| (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
     toMaxPoly = P.fromPolynomial MP.variable MP.constant
     polyFromTemplate tp = do
       SMTOpts {..} <- getOpts
@@ -249,26 +246,24 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
   constraintWith ShiftMax = do
     ainter <- lift getAInter
     cs <- getCurrentCoefficients
-    return (smtBigOr [ shiftMax cs (MP.splitMax p) | p <- I.image ainter])
-      where
-        shiftMax cs ps = smtBigOr [ smtBigAnd [ fromNatural v `smtGeq` c, c `smtGeq` fromNatural 1
-                                              , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
-                                                          | (c',m') <- concatMap P.toMonos ps
-                                                          , m' /= P.unitMono
-                                                          , c' /= c] ]
-                                  | (c,v) <- candidates ]
-          where
-            coeffVal c = fromJust (lookup c cs)
-            coeffs p = [ (c,m) | (c,m) <- P.toMonos p, let v = coeffVal c, v > 0]
-            candidates = concatMap f ps
-              where
-                f p = [ (c,maximum [ coeffVal (P.coefficientOf m p') | p' <- ps])
-                      | (c,m) <- P.toMonos p
-                      , m /= P.unitMono
-                      , coeffVal c == 0
-                      , any (\ p' -> length (dropCoeff m (coeffs p')) > length (coeffs p)) ps
-                      ]
-                dropCoeff m = filter (\ (_,m') -> m /= m')
+    let coeffVal c = fromJust (lookup c cs)
+        coeffs p = [ (c,m) | (c,m) <- P.toMonos p, coeffVal c > 0]
+        candidateShift p ps =
+              [ (c,c') | let csp = coeffs p
+                       , (c,m) <- csp
+                       , q <- ps
+                       , let c' = P.coefficientOf m q
+                       , let csq = coeffs q
+                       , length csp - 1 >= length csq + if coeffVal c' == 0 then 1 else 0 ]
+        candidates = [ (c,c',ps) | p <- I.image ainter, let ps = MP.splitMax p, p <- ps, (c,c') <- candidateShift p ps ]
+        maybeShift (c,c',ps) =
+          smtBigAnd [ smtBigOr [ smtBigAnd [c `smtEq` zero, fromNatural (coeffVal c' `max` coeffVal c) `smtGeq` c']
+                               , fromNatural (coeffVal c') `smtGeq` c' ]
+                    , smtBigAnd [ fromNatural (coeffVal d) `smtGeq` d
+                                | (d,m') <- concatMap P.toMonos ps, d `notElem` [c'], m' /= P.unitMono]
+                    ]
+    return $ smtBigAnd [ smtAny (\ (c,_,_) -> c `smtEq` zero) candidates
+                       , smtAll maybeShift candidates ]
 
   logInter = I.toList <$> getCurrentInterpretation >>= logBlk "Interpretation" . mapM_ logBinding where
     logBinding ((f,i),p) = logMsg (PP.pretty f PP.<> ppArgs i PP.<+> PP.text "=" PP.<+> PP.pretty p)
