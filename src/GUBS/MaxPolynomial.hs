@@ -135,11 +135,8 @@ simp = fromPolyList . filterSubsumed . nub . splitMax where --
     and [ c1 >= c2 | (c1 :>=: c2) <- P.absolutePositive (p1 `P.minus` p2)]
     && p1 /= p2
 
-instance (Eq c, Eq v, IsNat c, Max c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
-  pretty = pp id where
-    pp _   (Var v)      = PP.pretty v
-    pp _   (Const i)    = PP.pretty i
-    pp par (Mult t1 t2) = ppBin par "*" (pp PP.parens t1) (pp PP.parens t2)
-    pp par (Plus t1 t2) = ppBin par "+" (PP.pretty t1) (PP.pretty t2)
-    pp par (Max t1 t2)  = par (PP.text "max" PP.<> PP.tupled [PP.pretty t1, PP.pretty t2])
-
+instance (Eq c, Ord v, IsNat c, Max c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
+  pretty = pp . splitMax where
+    pp [] = PP.text "0"
+    pp [t] = PP.pretty t
+    pp ts = PP.text "max" PP.<> PP.tupled (PP.pretty `map` ts)

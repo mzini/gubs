@@ -14,7 +14,7 @@ sccDecompose p cs =
   case CS.sccs cs of
     [] -> return NoProgress
     (scc:sccs) -> do
-      logMsg ("SCC:" ++ show (length sccs + 1) ++ " SCCs")
+      logMsg ("SCC: " ++ show (length sccs + 1) ++ " SCCs")
       toResult sccs <$> p scc
   where
     toResult sccs (Progress []) = Progress (concat sccs)

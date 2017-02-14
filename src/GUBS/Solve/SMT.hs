@@ -133,7 +133,6 @@ freshPoly :: SMTSolver s => Int -> SMT s f (AbstractMaxPoly s I.Var)
 freshPoly ar = do
   SMTOpts {..} <- getOpts
   let t = template shape degree
-  logMsg (show t)
   if maxPoly
     then do
     p1 <- polyFromTemplate t
@@ -155,9 +154,14 @@ freshPoly ar = do
             | v == v' = (v',i+1) : mono
             | otherwise = (v',i) : v `mult` mono
 
-    exclusive p1 p2 = assert $ smtBigAnd
-      [ (c1 `smtEq` fromNatural 0) `smtOr` (c2 `smtEq` fromNatural 0)
-      | (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
+    exclusive p1 p2 = assert $
+      smtBigAnd [ smtBigOr [ (c1 `smtEq` zero) `smtAnd` (c2 `smtEq` zero)
+                           , c1 `smtGeq` s c2
+                           , c2 `smtGeq` s c1 ]
+                | (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
+      where s = (.+) (fromNatural 1)
+      -- [ (c1 `smtEq` fromNatural 0) `smtOr` (c2 `smtEq` fromNatural 0)
+      -- | (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
     toMaxPoly = P.fromPolynomial MP.variable MP.constant
     polyFromTemplate tp = do
       SMTOpts {..} <- getOpts
@@ -205,7 +209,7 @@ fromAssignment :: SMTSolver s => AbstractInterpretation s f -> SMT s f (Interpre
 fromAssignment i = I.mapInter MP.simp <$> liftSMT (traverse evalM i)
 
 minimizeM :: (PP.Pretty f, Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMTMinimization -> SMT s f (Interpretation f Integer)
-minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (getCurrentInterpretation >>= logMsg >> walkS ms)) where
+minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms)) where
 
   stateFromModel = do
     ainter <- getAInter
@@ -229,7 +233,7 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (getCurrentInterpretati
       then do
         lift stateFromModel >>= put
         lift $ logMsg (PP.text "Minimizing with " PP.<+> PP.text (show mm) PP.<+> PP.text  "...")
-        getCurrentInterpretation >>= logMsg
+        logInter
       else lift (logMsg ("Minimizing with " ++ show mm ++ "... Failed" ))
     lift $ liftSMT pop
     return success
@@ -265,13 +269,15 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (getCurrentInterpretati
                       , any (\ p' -> length (dropCoeff m (coeffs p')) > length (coeffs p)) ps
                       ]
                 dropCoeff m = filter (\ (_,m') -> m /= m')
-     
+
+  logInter = I.toList <$> getCurrentInterpretation >>= logBlk "Interpretation" . mapM_ logBinding where
+    logBinding ((f,i),p) = logMsg (PP.pretty f PP.<> ppArgs i PP.<+> PP.text "=" PP.<+> PP.pretty p)
+    ppArgs i = PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- take i I.variables]))        
 
 solveM :: (PP.Pretty f, PP.Pretty v, PP.Pretty (NLiteral s), Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMT s f (Maybe (Interpretation f Integer))
 solveM cs = do
-  ieqs <- sequence [(:>=:) <$> interpret l <*> interpret r | (l :>=: r) <- cs ]
-  mapM_ (logMsg . fmap (map P.toMonos. MP.splitMax)) ieqs
-  mapM_ (liftSMT . assert . F.subst dio . maxElim) ieqs
+  let assertIeq = liftSMT . assert . F.subst dio . maxElim
+  sequence_ [assertIeq =<< (:>=:) <$> interpret l <*> interpret r | l :>=: r <- cs ]
   mo <- minimize <$> getOpts
   ifM (liftSMT checkSat) (Just <$> minimizeM cs mo) (return Nothing)
   where

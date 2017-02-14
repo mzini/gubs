@@ -157,10 +157,10 @@ instance PP.Pretty v => PP.Pretty (Monomial v) where
 instance (PP.Pretty c, IsNat c, Eq c, PP.Pretty v) => PP.Pretty (Polynomial v c) where
   pretty poly = pretty' [p | p <- toMonos poly, fst p /= fromNatural 0] where
     pretty' [] = PP.char '0'
-    pretty' ps = PP.hcat (PP.punctuate (PP.char '+') (ppMono `map` ps))
+    pretty' ps = PP.hcat (PP.punctuate (PP.string " + ") (ppMono `map` ps))
     ppMono (c,mono) | c == fromNatural 1 = PP.pretty mono
     ppMono (c,toPowers -> []) = PP.pretty c
-    ppMono (c,mono) = PP.parens (PP.pretty c) PP.<> PP.char '*' PP.<> PP.pretty mono
+    ppMono (c,mono) = PP.pretty c PP.<> PP.char '*' PP.<> PP.pretty mono
 
    
 
