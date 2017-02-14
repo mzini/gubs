@@ -20,6 +20,7 @@ module GUBS.Solve.Strategy (
   , logOpenConstraints
   , logInterpretation
   , timed
+  , timeout
   ) where
 
 
@@ -29,6 +30,7 @@ import           Control.Monad.State
 import           Control.Monad.Trace
 import           Data.Tree (Forest)
 import           Data.Time        
+import qualified System.Timeout as Timeout
 
 import           GUBS.Utils
 import           GUBS.Algebra
@@ -59,7 +61,7 @@ modifyInterpretation :: Monad m => (Interpretation f c -> Interpretation f c) ->
 modifyInterpretation = modify
 
 
--- logInterpretation :: (Eq c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
+logInterpretation :: (Eq c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Monad m) =>  ConstraintSystem f v -> ProcT f c m ()
 logInterpretation cs =
   logBlk "Interpretation" $ fmap toList getInterpretation >>= mapM_ logBinding
   where
@@ -109,6 +111,17 @@ timed p cs = do
   end <- liftIO getCurrentTime
   logMsg ("Stopping timer: " ++ show end ++ "(+"++ show (diffUTCTime end start) ++")")
   return r
+
+timeout :: Int -> Processor f c v IO -> Processor f c v IO
+timeout to p cs = do
+  i <- getInterpretation
+  mr <- liftIO (Timeout.timeout to (run i (p cs)))
+  case mr of
+    Nothing -> return NoProgress
+    Just (r,i',l) -> do
+      modifyInterpretation (const i')
+      putTrace l
+      return r
 
 try :: Monad m => Processor f c v m -> Processor f c v m
 try p cs = do

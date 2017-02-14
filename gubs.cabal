@@ -62,5 +62,6 @@ library
                        PatternSynonyms,
                        PatternGuards,
                        TypeFamilies,
+                       TupleSections,
                        GADTs
                          
