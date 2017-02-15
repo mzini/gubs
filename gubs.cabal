@@ -1,5 +1,5 @@
 name:                gubs
-version:             0.2.0.0
+version:             0.3.0.0
 license:             MIT
 license-file:        LICENSE
 author:              Martin Avanzini
@@ -64,4 +64,21 @@ library
                        TypeFamilies,
                        TupleSections,
                        GADTs
-                         
+
+executable gubs
+ hs-source-dirs: gubs
+ ghc-options:    -threaded -Wall -O2 
+ default-language: Haskell2010 
+ main-is: Main.hs
+ build-depends: gubs,
+                base,
+                mtl,       
+                containers,
+                ansi-wl-pprint,                
+                cmdargs
+ default-extensions: TypeOperators,
+                     FlexibleContexts,
+                     FlexibleInstances,
+                     RecordWildCards,
+                     DeriveDataTypeable,
+                     StandaloneDeriving

@@ -3,8 +3,10 @@ module Main where
 
 import GUBS
 import GUBS.Utils
+
+import Control.Monad (when)
 import Text.PrettyPrint.ANSI.Leijen hiding ((<$>))
-import System.Environment (getArgs)
+import System.Console.CmdArgs
 import System.Exit (exitSuccess, exitFailure)
 import Data.Tree (drawTree, Tree (..))
 
@@ -12,11 +14,8 @@ import Data.Tree (drawTree, Tree (..))
 smtOpts :: SMTOpts
 smtOpts = defaultSMTOpts { minimize = tryM (iterM 3 zeroOut) `andThenM` tryM (iterM 3 shiftMax) `andThenM` iterM 3 decreaseCoeffs }
 
-smtSolver :: Solver
-smtSolver = Z3 -- MiniSmt
-
-processor :: Processor Symbol Integer Variable IO
-processor =
+processor :: Solver -> Processor Symbol Integer Variable IO
+processor smtSolver =
   withLog (try simplify) ==> try (exhaustive (logAs "SCC" (sccDecompose simple)))
   where
     withLog p cs = 
@@ -39,21 +38,34 @@ processor =
         try instantiate
         ==> try eliminate
         ==> try (exhaustive (propagateUp <=> propagateDown))
-        
+
+deriving instance Data Solver
+
+data GUBS = GUBS { solver  :: Solver
+                 , input   :: FilePath
+                 , verbose :: Bool }
+          deriving Data
+
+defaultConfig :: GUBS
+defaultConfig =
+  GUBS { input = def &= typFile &= argPos 0
+       , solver = Z3 &= help "SMT solver (minismt, z3). Defaults to z3."
+       , verbose = False }
+  
 main :: IO ()
 main = do
-  parsed <- csFromFile =<< (head <$> getArgs)
+  GUBS{..} <- cmdArgs defaultConfig
+  parsed <- csFromFile input
   case parsed of
     Left err -> do
       putDocLn (text "ERROR" <$$> text (show err))
       exitFailure
     Right cs -> do
-      (r,l) <- cs `solveWith` processor
-      putResult r
-      putLog l
+      (r,l) <- cs `solveWith` processor solver
+      putDocLn r
+      when verbose (putLog l)
       exitSuccess
   where
-    putResult = putDocLn
     putLog l = putDocErrLn (text "" <$$> text (drawTree (Node "ExecutionLog" l)))
 
       

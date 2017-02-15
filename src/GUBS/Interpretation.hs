@@ -82,5 +82,5 @@ instance PP.Pretty Var where
 instance (Eq c, IsNat c, SemiRing c, Max c, PP.Pretty f, PP.Pretty c) => PP.Pretty (Interpretation f c) where
   pretty inter = PP.vcat [ pp b | b <- toList inter ] where
     pp ((f,i),p) = PP.pretty f PP.<> PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- take i variables]))
-                PP.<+> PP.text "=" PP.<+> PP.pretty p PP.<> PP.text ","
+                PP.<+> PP.text "=" PP.<+> PP.pretty p PP.<> PP.text ";"
 
