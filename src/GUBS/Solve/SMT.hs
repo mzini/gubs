@@ -234,13 +234,33 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
     return success
 
   constraintWith ZeroOut = do
-    bs <- getCurrentCoefficients
-    return $ smtBigAnd [ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- bs ]
-                       , smtBigOr [ zero `smtEq` c | (c,v) <- bs, v > 0 ] ]
+    cs <- getCurrentCoefficients
+    ainter <- lift getAInter
+    let coeffVal c = fromJust (lookup c cs)
+        factorCoeffs p m =
+          [c' | (c',m') <- P.toMonos p , m' /= P.unitMono , m' `P.monoIsProperFactorOf` m ]
+        candidates p =
+          [ (c, factorCoeffs p m) | (c,m) <- P.toMonos p, coeffVal c > 0 ]
+        zeroOutPoly p =
+          smtBigOr [ -- some candidate zeroed out
+                     smtBigOr [ smtBigAnd [ c `smtEq` zero
+                                          , smtBigAnd [ fromNatural new `smtGeq` c'
+                                                      | c' <- cs', let new = coeffVal c' `max` coeffVal c]
+                                          , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
+                                                      | (c',_) <- P.toMonos p, c' `notElem` (c:cs')]]
+                              | (c,cs') <- candidates p ]
+                     -- no decrease
+                   , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
+                               | (c',_) <- P.toMonos p] ]
+          
+    return $ smtBigAnd [ smtBigAnd [ zeroOutPoly p | p <- concatMap MP.splitMax (I.image ainter) ]
+                       , smtBigOr [ c `smtEq` zero | (c,v) <- cs, v > 0] ]
+      
   constraintWith DecreaseCoeff =  do
-    bs <- getCurrentCoefficients
-    return $ smtBigAnd [ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- bs ]
-                       , smtBigOr [ fromNatural (v - 1) `smtGeq` c | (c,v) <- bs, v > 0 ] ]
+    cs <- getCurrentCoefficients
+    return $ smtBigAnd [ smtBigAnd [ fromNatural v `smtGeq` c | (c,v) <- cs ]
+                       , smtBigOr [ fromNatural (v - 1) `smtGeq` c | (c,v) <- cs, v > 0 ] ]
+      
   constraintWith ShiftMax = do
     ainter <- lift getAInter
     cs <- getCurrentCoefficients
@@ -254,7 +274,7 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
                        , let csq = coeffs q
                        , length csp - 1 >= length csq + if coeffVal c' == 0 then 1 else 0 ]
         candidates = [ [ shift | let ps = MP.splitMax p, q <- ps, shift <- candidateShift q ps ] | p <- I.image ainter ]
-    return $ smtBigAnd [ -- ensure single shift per polynomial
+    return $ smtBigAnd [ -- ensure (single) shift per polynomial
                         smtBigOr [ smtBigAnd [ if c == d then d `smtEq` zero else d `smtGeq` one | (d,_) <- shifts ]
                                  | shifts <- candidates, (c,_) <- shifts ]
                         -- constraints on shift candidates

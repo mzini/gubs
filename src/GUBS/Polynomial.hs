@@ -37,10 +37,11 @@ unitMono = Mono MS.empty
 fromMono :: IsNat c => Monomial v -> Polynomial v c 
 fromMono m = Poly (M.singleton m (fromNatural 1))
 
-
-
 monoVariables :: Ord v => Monomial v -> [v]
 monoVariables (Mono m) = S.toAscList (MS.toSet m)
+
+monoIsProperFactorOf :: Ord v => Monomial v -> Monomial v -> Bool
+Mono m1 `monoIsProperFactorOf` Mono m2 = m1 `MS.isProperSubsetOf` m2
 
 -- polynomials
 
