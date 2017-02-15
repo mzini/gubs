@@ -152,13 +152,11 @@ freshPoly ar = do
 
     exclusive ps = assert $ 
       smtBigAnd [ smtAll (smtEq zero . fst) ms `smtOr` smtAny dominating ms
-                | p <- ps, let ms = [(c,m) | (c,m) <- P.toMonos p, m /= P.unitMono]]
+                | p <- ps, let ms = [(c,m) | (c,m) <- P.toMonos p]] 
       where
         dominating (c,m) = smtBigAnd [ c `smtGeq` (c' .+ fromNatural 1) | c' <- coeffs M.! m, c /= c' ]
         coeffs = M.unionsWith (++) [ (: []) `fmap` P.toMonoMap p | p <- ps]
       
-      -- [ (c1 `smtEq` fromNatural 0) `smtOr` (c2 `smtEq` fromNatural 0)
-      -- -| (c1,m) <- P.toMonos p1, not (null (P.toPowers m)), let c2 = P.coefficientOf m p2]
     toMaxPoly = P.fromPolynomial MP.variable MP.constant
     polyFromTemplate tp = do
       SMTOpts {..} <- getOpts
@@ -255,15 +253,20 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
                        , let c' = P.coefficientOf m q
                        , let csq = coeffs q
                        , length csp - 1 >= length csq + if coeffVal c' == 0 then 1 else 0 ]
-        candidates = [ (c,c',ps) | p <- I.image ainter, let ps = MP.splitMax p, p <- ps, (c,c') <- candidateShift p ps ]
-        maybeShift (c,c',ps) =
-          smtBigAnd [ smtBigOr [ smtBigAnd [c `smtEq` zero, fromNatural (coeffVal c' `max` coeffVal c) `smtGeq` c']
-                               , fromNatural (coeffVal c') `smtGeq` c' ]
-                    , smtBigAnd [ fromNatural (coeffVal d) `smtGeq` d
-                                | (d,m') <- concatMap P.toMonos ps, d `notElem` [c'], m' /= P.unitMono]
-                    ]
-    return $ smtBigAnd [ smtAny (\ (c,_,_) -> c `smtEq` zero) candidates
-                       , smtAll maybeShift candidates ]
+        candidates = [ [ shift | let ps = MP.splitMax p, q <- ps, shift <- candidateShift q ps ] | p <- I.image ainter ]
+    return $ smtBigAnd [ -- ensure single shift per polynomial
+                        smtBigOr [ smtBigAnd [ if c == d then d `smtEq` zero else d `smtGeq` one | (d,_) <- shifts ]
+                                 | shifts <- candidates, (c,_) <- shifts ]
+                        -- constraints on shift candidates
+                       , smtBigAnd [ smtBigOr [ (zero `smtEq` c)             `smtAnd` (fromNatural new' `smtGeq` c')
+                                              , (fromNatural old `smtGeq` c) `smtAnd` (fromNatural old' `smtGeq` c') ]
+                                   | shifts <- candidates, (c,c') <- shifts
+                                   , let old  = coeffVal c
+                                   , let old' = coeffVal c'
+                                   , let new' = old `max` old' ]
+                        -- constraint non-candidates
+                       , smtBigAnd [fromNatural v `smtGeq` d
+                                   | (d,v) <- cs, d `notElem` concatMap (concatMap (\ (c,c') -> [c,c'])) candidates ]]
 
   logInter = I.toList <$> getCurrentInterpretation >>= logBlk "Interpretation" . mapM_ logBinding where
     logBinding ((f,i),p) = logMsg (PP.pretty f PP.<> ppArgs i PP.<+> PP.text "=" PP.<+> PP.pretty p)
@@ -279,7 +282,7 @@ solveM cs = do
     dio (Geq l r) = smtBigAnd [ p `smtGeq` q | (p :>=: q) <- P.absolutePositive (l `P.minus` r) ]
 
 
-smt :: (PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => Solver -> SMTOpts -> Processor f Integer v m
+smt :: (Show f, PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => Solver -> SMTOpts -> Processor f Integer v m
 smt _ _ [] = return NoProgress
 smt solver opts cs = do
   inter <- getInterpretation
