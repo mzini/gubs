@@ -126,7 +126,7 @@ substitute s p = sumA [ substMono m | (_,m) <- toMonos p]
 
 fromPolynomial :: SemiRing a => (v -> a) -> (c -> a) -> Polynomial v c -> a
 fromPolynomial var coeff p = sumA [ coeff c .* fromMonomial m | (c,m) <- toMonos p] where
-  fromMonomial m = prod [ prod (replicate p (var v)) | (v,p) <- toPowers m]
+  fromMonomial m = prod [ var v .^ p | (v,p) <- toPowers m]
  
 evalWithM :: (SemiRing c, Monad m) => (v -> m c) -> Polynomial v c -> m c
 evalWithM getValue = eval where
@@ -139,10 +139,10 @@ evalWithM getValue = eval where
 evalWith :: SemiRing c => (v -> c) -> Polynomial v c -> c
 evalWith getValue = runIdentity . evalWithM (return . getValue)
 
-toNatural :: (IsNat c, IsNat n, SemiRing n) => (c -> n) -> (v -> n) -> Polynomial v c -> n
-toNatural fromCoeff fromVar = fromPoly where
-  fromPoly p = sumA [ fromCoeff c .* fromMono m | (c,m) <- toMonos p ]
-  fromMono m = prod [ fromVar v .^ e | (v,e) <- toPowers m ]
+-- toNatural :: (IsNat c, IsNat n, SemiRing n) => (c -> n) -> (v -> n) -> Polynomial v c -> n
+-- toNatural fromCoeff fromVar = fromPoly where
+--   fromPoly p = sumA [ fromCoeff c .* fromMono m | (c,m) <- toMonos p ]
+--   fromMono m = prod [ fromVar v .^ e | (v,e) <- toPowers m ]
   
 -- pretty printers
    

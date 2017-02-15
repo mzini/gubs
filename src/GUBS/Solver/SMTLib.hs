@@ -30,7 +30,14 @@ instance SMT.Backend b => Multiplicative (SMT.SMT b (SMT.Expr b 'SMT.IntType)) w
 
 
 toSMTExp :: SMT.Backend b => SMTExpression (SMTLibSolver b) -> SMT.SMT b (SMT.Expr b 'SMT.IntType)
-toSMTExp = E.toNatural fromNatural var where var (NLit (_,v)) = return v
+toSMTExp = fromMP . E.fromPolynomial MP.variable MP.constant -- to exploit simplification
+  where
+    fromMP (MP.Var (NLit (_,v))) = return v
+    fromMP (MP.Const i)          = fromNatural i
+    fromMP (MP.Plus a b)         = fromMP a .+ fromMP b
+    fromMP (MP.Mult a b)         = fromMP a .* fromMP b
+    fromMP MP.Max{}              = error "max encountered"
+
 
 toSMTFormula :: SMT.Backend b => SMTFormula (SMTLibSolver b) -> SMT.SMT b (SMT.Expr b 'SMT.BoolType)
 toSMTFormula Top                             = SMT.cbool True
@@ -38,7 +45,7 @@ toSMTFormula Bot                             = SMT.cbool False
 toSMTFormula (Lit (BoolLit (BLit (_,l))))    = return l
 toSMTFormula (Lit (NegBoolLit (BLit (_,l)))) = SMT.not' (return l)
 toSMTFormula (Atom (Geq l r))                = toSMTExp l SMT..>=. toSMTExp r
-toSMTFormula (Atom (Eq l r))                 =  toSMTExp l SMT..==. toSMTExp r
+toSMTFormula (Atom (Eq l r))                 = toSMTExp l SMT..==. toSMTExp r
 toSMTFormula (And f1 f2)                     = toSMTFormula f1 SMT..&. toSMTFormula f2
 toSMTFormula (Or f1 f2)                      = toSMTFormula f1 SMT..|. toSMTFormula f2    
 
@@ -95,6 +102,11 @@ instance Eq (NLiteral (SMTLibSolver b)) where
   
 instance Ord (NLiteral (SMTLibSolver b)) where
   (NLit (a,_)) `compare` (NLit (b,_)) = a `compare` b
+
+instance Show (NLiteral (SMTLibSolver b)) where
+  show (NLit (i,_)) = "v" ++ show i
+instance Show (BLiteral (SMTLibSolver b)) where
+  show (BLit (i,_)) = "v" ++ show i
 
 instance PP.Pretty (NLiteral (SMTLibSolver b)) where
   pretty (NLit (i,_)) = PP.text "v" PP.<> PP.integer i

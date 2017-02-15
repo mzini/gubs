@@ -194,8 +194,8 @@ freshSymbol tpe = do
 
 instance SMTSolver MiniSMT where
   data SolverM MiniSMT a = S (St.StateT SolverState IO a) deriving (Functor)
-  data NLiteral MiniSMT = NLit Symbol deriving (Eq, Ord)
-  data BLiteral MiniSMT = BLit Symbol  
+  data NLiteral MiniSMT = NLit Symbol deriving (Eq, Ord, Show)
+  data BLiteral MiniSMT = BLit Symbol deriving (Eq, Ord, Show)  
 
   freshBool = BLit <$> freshSymbol BoolType
   freshNat = NLit <$> freshSymbol NatType  

@@ -3,7 +3,7 @@ module GUBS.Expression
          Expression
        , variable
        , zero
-       , toNatural
+       , fromPolynomial
        , evalWithM
        , evalWith
        ) where
