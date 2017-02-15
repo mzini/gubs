@@ -51,6 +51,7 @@ defaultConfig =
   GUBS { input = def &= typFile &= argPos 0
        , solver = Z3 &= help "SMT solver (minismt, z3). Defaults to z3."
        , verbose = False }
+  &= summary "GUBS Upper Bound Solver 0.3"
   
 main :: IO ()
 main = do
