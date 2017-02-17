@@ -1,6 +1,7 @@
 module GUBS.Solve (
   solveWith
-  , solveWith'
+  , solveWithLog
+  , defaultProcessor
   , Answer (..)
   , interpretation
   , module S
@@ -24,17 +25,46 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 data Answer f v c = Open (ConstraintSystem f v) (Interpretation f c) | Sat (Interpretation f c) deriving (Show)
 
-solveWith :: (Eq c, Integral c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>
+
+defaultProcessor :: (Ord v, Ord f, PP.Pretty f, PP.Pretty v, Show f) => Solver -> Processor f Integer v IO
+defaultProcessor smtSolver =
+  withLog (try simplify) ==> try (exhaustive (logAs "SCC" (sccDecompose simple)))
+  where
+    withLog p cs = 
+      logOpenConstraints cs *> p cs <* logInterpretation cs <* logConstraints cs
+      
+    logAs str p cs = logBlk (str++"...") (p cs)
+    smtOpts = defaultSMTOpts { minimize = tryM (iterM 3 zeroOut) `andThenM` tryM (iterM 3 shiftMax) `andThenM` iterM 3 decreaseCoeffs }
+
+    simple =
+      logAs "SOLVE" $ timed $ withLog $
+        try simplify
+        ==> try (smt' "SMT-MSLI"   smtOpts { degree = 1, maxCoeff = Just 1, maxPoly = True })
+        ==> try (smt' "SMT-SLI"    smtOpts { degree = 1, maxCoeff = Just 1 })
+        ==> try (smt' "SMT-LI"     smtOpts { degree = 1 })
+        ==> try (smt' "SMT-MMI(2)" smtOpts { degree = 2})
+        ==> try (smt' "SMT-MI(2)"  smtOpts { degree = 2, shape = Mixed})
+        ==> try (smt' "SMT-MMI(3)" smtOpts { degree = 3})
+        ==> try (smt' "SMT-MI(3)"  smtOpts { degree = 4, shape = Mixed})
+    smt' n o = logAs n $ timed $ smt smtSolver o
+    simplify = 
+      logAs "Simplification" $
+        try instantiate
+        ==> try eliminate
+        ==> try (exhaustive (propagateUp <=> propagateDown))
+
+
+solveWithLog :: (Eq c, Integral c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>
   ConstraintSystem f v -> Processor f c v m -> m (Answer f v c, ExecutionLog)
-solveWith cs p = toAnswer <$> run I.empty (p (nub cs)) where
+solveWithLog cs p = toAnswer <$> run I.empty (p (nub cs)) where
   toAnswer (Progress [],i,l) = (Sat i, l)
   toAnswer (Progress cs',i,l) = (Open cs' i, l) 
   toAnswer (NoProgress,i,l) = (Open cs i, l)   
 
 
-solveWith' :: (Eq c, Integral c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>
+solveWith :: (Eq c, Integral c, IsNat c, SemiRing c, Max c, PP.Pretty c, PP.Pretty f, Ord f, Ord v, PP.Pretty v, Monad m) =>
   ConstraintSystem f v -> Processor f c v m -> m (Answer f v c)
-solveWith' cs p = fst <$> solveWith cs p
+solveWith cs p = fst <$> solveWithLog cs p
 
 interpretation :: Answer f v c -> Maybe (Interpretation f c)
 interpretation (Sat i) = Just i
