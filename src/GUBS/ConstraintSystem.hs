@@ -37,7 +37,6 @@ sccs cs = map flattenSCC sccs'
   where
     sccs' = stronglyConnComp [ (c, i, succs c) | (i, c) <- ecs ]
     ecs = zip [0 ..] cs
-    -- succs c@(l :=: r) = succs (l :>=: r) ++ succs (r :>=: l)
     succs c@(l :>=: r) = [ j | (j, c') <- ecs
                              , any (`elem` funs c) (T.funs (C.lhs c')) ]
 
@@ -47,7 +46,7 @@ instance {-# OVERLAPPING #-} (PP.Pretty f, PP.Pretty v) => PP.Pretty (Constraint
   pretty = PP.vcat . map PP.pretty
 
 instance (PP.Pretty f, PP.Pretty v) => PrettySexp (ConstraintSystem f v) where
-  prettySexp = PP.vcat . map PP.pretty
+  prettySexp = PP.vcat . map prettySexp
 
 -- parsing
 

@@ -238,7 +238,7 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
     ainter <- lift getAInter
     let coeffVal c = fromJust (lookup c cs)
         factorCoeffs p m =
-          [c' | (c',m') <- P.toMonos p , m' /= P.unitMono , m' `P.monoIsProperFactorOf` m ]
+          [ c' | (c',m') <- P.toMonos p , m' `P.monoIsProperFactorOf` m ]
         candidates p =
           [ (c, factorCoeffs p m) | (c,m) <- P.toMonos p, coeffVal c > 0 ]
         zeroOutPoly p =
@@ -249,7 +249,7 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
                                           , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
                                                       | (c',_) <- P.toMonos p, c' `notElem` (c:cs')]]
                               | (c,cs') <- candidates p ]
-                     -- no decrease
+                     -- no increase
                    , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
                                | (c',_) <- P.toMonos p] ]
           

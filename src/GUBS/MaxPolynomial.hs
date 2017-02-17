@@ -25,12 +25,15 @@ constant = Const
 variable :: v -> MaxPoly v c
 variable = Var
 
+variablesDL :: MaxPoly v c -> [v] -> [v]
+variablesDL (Var v) = (:) v
+variablesDL (Const _)  = id
+variablesDL (Plus p q) = variablesDL p . variablesDL q
+variablesDL (Mult p q) = variablesDL p . variablesDL q
+variablesDL (Max p q)  = variablesDL p . variablesDL q
+
 variables :: MaxPoly v c -> [v]
-variables (Var v)    = [v]
-variables (Const _)  = []
-variables (Plus p q) = variables p ++ variables q
-variables (Mult p q) = variables p ++ variables q
-variables (Max p q)  = variables p ++ variables q
+variables p = variablesDL p []
 
 coefficients :: MaxPoly v c -> [c]
 coefficients = toList
@@ -71,7 +74,7 @@ fromMaxPoly var con (Max p q)  = fromMaxPoly var con p `maxA` fromMaxPoly var co
 
 substitute :: (Eq c, SemiRing c) => (v -> MaxPoly v' c) -> MaxPoly v c -> MaxPoly v' c
 substitute s (Var v)    = s v
-substitute s (Const c)  = Const c
+substitute _ (Const c)  = Const c
 substitute s (Plus p q) = substitute s p .+ substitute s q
 substitute s (Mult p q) = substitute s p .* substitute s q
 substitute s (Max p q)  = substitute s p `maxA` substitute s q

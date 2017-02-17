@@ -72,7 +72,13 @@ instance Multiplicative (Term f v) where
   Const i .* Const j = Const (i * j)
   t1      .* t2      = Mult t1 t2
 
-  
+instance Num (Term f v) where
+  (+) = (.+)
+  (*) = (.*)
+  fromInteger = fromNatural
+  signum _ = error "signums not defined on terms"
+  abs _ = error "abs not defined on terms"
+  negate _ = error "negate not defined on terms"    
 -- ops
 
 argsDL :: Term f v -> [Term f v] -> [Term f v]
@@ -116,21 +122,21 @@ definedSymbol _ = Nothing
 
 instance (PP.Pretty f, PP.Pretty v) => PP.Pretty (Term f v) where
   pretty = pp id where
-    pp _ (Var v) = PP.pretty v
-    pp _ (Const i) = PP.integer i
-    pp _ (Fun f ts) = PP.pretty f PP.<> PP.tupled [PP.pretty ti | ti <- ts]
-    pp par (Mult t1 t2) = ppBin par "*" t1 t2
-    pp par (Plus t1 t2) = ppBin par "+" t1 t2
-    pp par (Max t1 t2)  = par (PP.text "max" PP.<> PP.tupled [PP.pretty t1, PP.pretty t2])
+    pp _   (Var v) = PP.pretty v
+    pp _   (Const i) = PP.integer i
+    pp _   (Fun f ts) = PP.pretty f PP.<> PP.tupled [PP.pretty ti | ti <- ts]
+    pp par (Mult t1 t2) = ppBin par "*" (pp PP.parens t1) (pp PP.parens t2)
+    pp par (Plus t1 t2) = ppBin par "+" (pp PP.parens t1) (pp PP.parens t2)
+    pp _   (Max t1 t2)  = PP.text "max" PP.<> PP.tupled [PP.pretty t1, PP.pretty t2]
 
 instance (PP.Pretty f, PP.Pretty v) => PrettySexp (Term f v) where 
   prettySexp (Var v) = ppCall "var" [PP.pretty v]
   prettySexp (Const i) = PP.integer i
   prettySexp (Fun f []) = ppSexp [PP.pretty f, ppSexp []]
   prettySexp (Fun f ts) = ppSexp (PP.pretty f : [prettySexp ti | ti <- ts])
-  prettySexp (Mult t1 t2) = ppCall "*" [t1,t2]
-  prettySexp (Plus t1 t2) = ppCall "+" [t1,t2]
-  prettySexp (Max t1 t2) = ppCall "max" [t1,t2]
+  prettySexp (Mult t1 t2) = ppCall "*" [prettySexp t1, prettySexp t2]
+  prettySexp (Plus t1 t2) = ppCall "+" [prettySexp t1, prettySexp t2]
+  prettySexp (Max t1 t2) = ppCall "max" [prettySexp t1, prettySexp t2]
 
 
 interpretM :: (Max a, SemiRing a, IsNat a, Monad m) => (v -> m a) -> (f -> [a] -> m a) -> Term f v -> m a
