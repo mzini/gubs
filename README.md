@@ -85,7 +85,7 @@ ghci GUBS> r <- cs `solveWith` defaultProcessor
 ~~~~
 
 This results in a term of type `Answer`, an option type that is either `Sat` or `Open`.
-In this example example, the search succeeds:
+In this example, the search succeeds:
 
 ~~~~
 ghci GUBS> :t r
