@@ -11,6 +11,9 @@ using either [minismt](http://cl-informatik.uibk.ac.at/software/minismt/) or
 [z3](https://github.com/Z3Prover/z3), 
 various simplification techniques and a per SCC analysis.
 
+GUBS has been tested only on Linux, but may work on other platforms. 
+On linux, in order to use any of the supported SMT-solvers, they have to be accessible in `$PATH`.
+
 GUBS comes along as a stand-alone executable as well as a Haskell-library. 
 
 ## Stand-alone executable
