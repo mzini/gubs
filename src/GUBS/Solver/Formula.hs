@@ -29,9 +29,21 @@ subst f (Atom a) = f a
 subst f (Or e1 e2) = Or (subst f e1) (subst f e2)
 subst f (And e1 e2) = And (subst f e1) (subst f e2)
 subst f (LetB e1 e2) = LetB (subst f e1) (subst f . e2)
+subst f (Iff e1 e2) = Iff (subst f e1) (subst f e2)
 
 literal :: l -> Formula l e
 literal = Lit . BoolLit
+
+atoms :: Formula l e -> [Atom e]
+atoms (Atom a) = [a]
+atoms Top = []
+atoms Bot = []
+atoms Lit{} = []
+atoms (Or f1 f2) = atoms f1 ++ atoms f2
+atoms (And f1 f2) = atoms f1 ++ atoms f2
+atoms (Iff f1 f2) = atoms f1 ++ atoms f2
+atoms (LetB f1 f2) = atoms f1 ++ atoms (f2 undefined)
+
 
 negLiteral :: l -> Formula l e
 negLiteral = Lit . NegBoolLit
@@ -40,6 +52,7 @@ gtA,eqA,geqA :: (IsNat e, Additive e) => e -> e -> Formula l e
 gtA e1 e2 = Atom (Geq e1 (e2 .+ fromNatural 1))
 eqA e1 e2 = Atom (Eq e1 e2)
 geqA e1 e2 = Atom (Geq e1 e2)
+
 
 smtTop, smtBot :: Formula b e
 smtTop = Top

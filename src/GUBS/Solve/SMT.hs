@@ -19,6 +19,7 @@ module GUBS.Solve.SMT
 
 import Data.Maybe (fromJust)
 import Data.List (subsequences,nub, (\\))
+import qualified Data.Foldable as Fold
 import Control.Arrow (second)
 import Control.Applicative ((<|>))
 import Control.Monad (forM, foldM, forM_, liftM, when, unless, filterM, (>=>), replicateM)
@@ -126,43 +127,39 @@ getCInter :: SMTSolver s => SMT s f (Interpretation f Integer)
 getCInter = do (_,ci,_) <- get; return ci
 
 
--- SMTOpts { .. }
 freshPoly :: SMTSolver s => Int -> SMT s f (AbstractMaxPoly s I.Var)
 freshPoly ar = do
   SMTOpts {..} <- getOpts
-  let t = template shape degree
+  -- logMsg p
   if maxPoly
     then do
-    ps <- replicateM (min ar 3) (polyFromTemplate t)
+    ps <- replicateM (min ar 3) (template shape degree)
     liftSMT (exclusive ps)
-    return (maximumA [toMaxPoly p | p <- ps])
-    else toMaxPoly <$> polyFromTemplate t
+    return (maximumA [ toMaxPoly p | p <- ps ])
+    else toMaxPoly <$> template shape degree
   where
-    template MultMixed degree = [ [ (v,1) | v <- ms] | ms <- subsequences (take ar I.variables)
-                                                     , length ms <= degree ]
-    template Mixed degree = concat (template' degree) where 
-      template' 0 = [[[]]]
-      template' d = [ v `mult` mono | mono <- lead, v <- take ar I.variables ] : ps
-        where
-          ps@(lead:_) = template' (d - 1)
-          v `mult` [] = [(v,1)]
-          v `mult` ((v',i) : mono)
-            | v == v' = (v',i+1) : mono
-            | otherwise = (v',i) : v `mult` mono
+    toPoly powers = do
+      let mono = [ P.variable v .^ i | (v,i) <- powers, i > 0]
+      SMTOpts {..} <- getOpts
+      c <- freshCoeff (if null mono then maxConst else maxCoeff)
+      return (P.coefficient c .* prod mono)
+    template MultMixed degree =
+      sumA <$> sequence [ toPoly [ (v,1::Int) | v <- vs]
+                        | vs <- subsequences (take ar I.variables)
+                        , length vs <= degree ]
+    template Mixed degree =
+      sumA <$> sequence  [ toPoly (zip (take ar I.variables) ds)
+                         | ds <- replicateM ar [0..degree]
+                         , sum ds <= degree ]
 
     exclusive ps = assert $ 
       smtBigAnd [ smtAll (smtEq zero . fst) ms `smtOr` smtAny dominating ms
                 | p <- ps, let ms = [(c,m) | (c,m) <- P.toMonos p]] 
       where
-        dominating (c,m) = smtBigAnd [ c `smtGeq` (c' .+ fromNatural 1) | c' <- coeffs M.! m, c /= c' ]
+        dominating (c,m) = smtBigAnd [ c `smtGeq` (c' .+ fromNatural (1::Int)) | c' <- coeffs M.! m, c /= c' ]
         coeffs = M.unionsWith (++) [ (: []) `fmap` P.toMonoMap p | p <- ps]
       
     toMaxPoly = P.fromPolynomial MP.variable MP.constant
-    polyFromTemplate tp = do
-      SMTOpts {..} <- getOpts
-      sumA <$> sequence [ toP mono <$> freshCoeff (if null mono then maxConst else maxCoeff) | mono <- tp]
-      where toP mono c = P.coefficient c .* prod [P.variable v .^ i | (v,i) <- mono]
-            
 
 interpret :: (Ord f, Ord v, SMTSolver s) => Term f v -> SMT s f (AbstractMaxPoly s v)
 interpret = T.interpretM (return . MP.variable) i where
@@ -204,7 +201,7 @@ fromAssignment :: SMTSolver s => AbstractInterpretation s f -> SMT s f (Interpre
 fromAssignment i = I.mapInter MP.simp <$> liftSMT (traverse evalM i)
 
 minimizeM :: (PP.Pretty f, Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMTMinimization -> SMT s f (Interpretation f Integer)
-minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms)) where
+minimizeM _ ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms)) where
 
   stateFromModel = do
     ainter <- getAInter
@@ -237,22 +234,21 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
     cs <- getCurrentCoefficients
     ainter <- lift getAInter
     let coeffVal c = fromJust (lookup c cs)
-        factorCoeffs p m =
-          [ c' | (c',m') <- P.toMonos p , m' `P.monoIsProperFactorOf` m ]
         candidates p =
-          [ (c, factorCoeffs p m) | (c,m) <- P.toMonos p, coeffVal c > 0 ]
+          [ (c, [ c' | (c',m') <- P.toMonos p , m' `P.monoIsFactorOf` m, c/=c' ])
+          | (c,m) <- P.toMonos p, coeffVal c > 0 ]
         zeroOutPoly p =
           smtBigOr [ -- some candidate zeroed out
                      smtBigOr [ smtBigAnd [ c `smtEq` zero
                                           , smtBigAnd [ fromNatural new `smtGeq` c'
-                                                      | c' <- cs', let new = coeffVal c' `max` coeffVal c]
+                                                      | c' <- cs', let new = coeffVal c' `max` coeffVal c ]
                                           , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
                                                       | (c',_) <- P.toMonos p, c' `notElem` (c:cs')]]
                               | (c,cs') <- candidates p ]
                      -- no increase
                    , smtBigAnd [ fromNatural (coeffVal c') `smtGeq` c'
                                | (c',_) <- P.toMonos p] ]
-          
+    -- logMsg [ candidates p | p <- concatMap MP.splitMax (I.image ainter)]     
     return $ smtBigAnd [ smtBigAnd [ zeroOutPoly p | p <- concatMap MP.splitMax (I.image ainter) ]
                        , smtBigOr [ c `smtEq` zero | (c,v) <- cs, v > 0] ]
       
@@ -292,7 +288,7 @@ minimizeM cs ms = fst <$> (stateFromModel >>= execStateT (logInter >> walkS ms))
     logBinding ((f,i),p) = logMsg (PP.pretty f PP.<> ppArgs i PP.<+> PP.text "=" PP.<+> PP.pretty p)
     ppArgs i = PP.parens (PP.hcat (PP.punctuate (PP.text ",") [PP.pretty v | v <- take i I.variables]))        
 
-solveM :: (PP.Pretty f, PP.Pretty v, PP.Pretty (NLiteral s), Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMT s f (Maybe (Interpretation f Integer))
+solveM :: (PP.Pretty f, PP.Pretty v, Ord f, Ord v, SMTSolver s) => ConstraintSystem f v -> SMT s f (Maybe (Interpretation f Integer))
 solveM cs = do
   let assertIeq = liftSMT . assert . F.subst dio . maxElim
   sequence_ [assertIeq =<< (:>=:) <$> interpret l <*> interpret r | l :>=: r <- cs ]

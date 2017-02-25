@@ -45,7 +45,7 @@ defaultProcessor smtSolver =
         ==> try (smt' "SMT-MMI(2)" smtOpts { degree = 2})
         ==> try (smt' "SMT-MI(2)"  smtOpts { degree = 2, shape = Mixed})
         ==> try (smt' "SMT-MMI(3)" smtOpts { degree = 3})
-        ==> try (smt' "SMT-MI(3)"  smtOpts { degree = 4, shape = Mixed})
+        ==> try (smt' "SMT-MI(3)"  smtOpts { degree = 3, shape = Mixed})
     smt' n o = logAs n $ timed $ smt smtSolver o
     simplify = 
       logAs "Simplification" $
