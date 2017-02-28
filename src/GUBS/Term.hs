@@ -132,7 +132,6 @@ instance (PP.Pretty f, PP.Pretty v) => PP.Pretty (Term f v) where
 instance (PP.Pretty f, PP.Pretty v) => PrettySexp (Term f v) where 
   prettySexp (Var v) = ppCall "var" [PP.pretty v]
   prettySexp (Const i) = PP.integer i
-  prettySexp (Fun f []) = ppSexp [PP.pretty f, ppSexp []]
   prettySexp (Fun f ts) = ppSexp (PP.pretty f : [prettySexp ti | ti <- ts])
   prettySexp (Mult t1 t2) = ppCall "*" [prettySexp t1, prettySexp t2]
   prettySexp (Plus t1 t2) = ppCall "+" [prettySexp t1, prettySexp t2]
