@@ -31,7 +31,7 @@ TERM       = (var IDENT)           -- variable
            | (IDENT TERM ... TERM) -- uninterpreted function
            | INTEGER               -- constant
 ~~~~
-where identities `IDENT` are composed of alpha-numerical characters and special symbols `'`, `_`, `/`, `#`, and `?`.
+where identities `IDENT` are composed of alpha-numerical characters and special symbols `'`, `_`, `/`, `#`, `?`, `!`, `[`,`]`,`:` and `@`.
 See the [example folder](https://github.com/mzini/gubs/tree/master/examples) in the source distribution for some examples.
 Upon invokation, it will either output `SUCCESS` together with the model, or `OPEN`
 in case `gubs` is not able to find a model.
