@@ -8,7 +8,7 @@ import           GUBS.Utils
 
 import           Control.Monad.IO.Class
 import           Control.Monad (join, void)
-import           System.IO 
+import           System.IO
 import           Data.Char (digitToInt)
 import           Data.List (nub,foldl')
 import           Data.String
@@ -26,19 +26,35 @@ funs c = nub (T.funsDL (C.lhs c) (T.funsDL (C.rhs c) []))
 funsCS :: Eq f => ConstraintSystem f v -> [(f,Int)]
 funsCS = nub . foldr funsC [] where
   funsC c = T.funsDL (C.lhs c) . T.funsDL (C.rhs c)
-  
+
 lhss,rhss :: ConstraintSystem f v -> [T.Term f v]
 lhss = map C.lhs
 rhss = map C.rhs
 
---TODO check if that makes sense
+sccsWith :: (v -> v -> Bool) -> [v] -> [[v]]
+sccsWith p cs = map flattenSCC sccs' where
+  sccs' = stronglyConnComp [ (c, i, succs c) | (i, c) <- ecs ]
+  ecs = zip [0 ..] cs
+  succs from = [ j | (j, to) <- ecs, p from to ]
+
+-- | Default scc decomposition.
 sccs :: Eq f => ConstraintSystem f v -> [ConstraintSystem f v]
-sccs cs = map flattenSCC sccs'
+sccs = sccsWith $ \ from to -> any (`elem` funs from) (T.funs (C.lhs to))
+
+-- MS: using @trs2cs-0@ constraints for polynomial interpretations for TRSs contain stronly linear constraints, eg
+-- @x1+...+xn+k() >= c(x1,...,xn)@. Since k() is fresh such constraints are always sinlge node SCCs in `sccs`.
+sccs' :: Eq f => ConstraintSystem f v -> [ConstraintSystem f v]
+sccs' = sccsWith $ \from to ->
+  if isSli to
+    then any (`elem` funs from) (funs to)
+    else any (`elem` funs from) (T.funs (C.lhs to))
   where
-    sccs' = stronglyConnComp [ (c, i, succs c) | (i, c) <- ecs ]
-    ecs = zip [0 ..] cs
-    succs c@(l :>=: r) = [ j | (j, c') <- ecs
-                             , any (`elem` funs c) (T.funs (C.lhs c')) ]
+    isSli (l :>=: T.Fun f _) = isSli' l
+    isSli _                  = False
+    isSli' (T.Plus t1 t2) = isSli' t1 && isSli' t2
+    isSli' (T.Var _)      = True
+    isSli' (T.Fun _ [])   = True
+    isSli' _              = False
 
 -- pretty printing
 
@@ -85,7 +101,7 @@ term = try constant <|> parens (try var <|> compound) where
   toTerm "*" ts  = return (prod ts)
   toTerm "+" ts  = return (sumA ts)
   toTerm "max" ts  = return (maximumA ts)
-  
+
 constraint :: Parser (TermConstraint Symbol Variable)
 constraint = parens $ do
   c <- literal ">=" >> return (:>=:)

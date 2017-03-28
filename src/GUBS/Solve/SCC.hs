@@ -1,5 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
-module GUBS.Solve.SCC (sccDecompose) where
+module GUBS.Solve.SCC (sccDecompose, sccDecomposeWith) where
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
@@ -8,10 +7,12 @@ import           GUBS.Algebra
 import qualified GUBS.ConstraintSystem as CS
 
 
+sccDecompose :: (Eq f, Monad m) => Processor f c v m -> Processor f c v m
+sccDecompose = sccDecomposeWith CS.sccs
 
-sccDecompose :: (Monad m, Ord v, PP.Pretty v, Eq c, Integral c, SemiRing c, Max c, IsNat c, PP.Pretty c, Eq f, Ord f, PP.Pretty f) => Processor f c v m -> Processor f c v m
-sccDecompose p cs =
-  case CS.sccs cs of
+sccDecomposeWith :: Monad m => (CS.ConstraintSystem f v -> [CS.ConstraintSystem f v]) -> Processor f c v m -> Processor f c v m
+sccDecomposeWith f p cs =
+  case f cs of
     [] -> return NoProgress
     (scc:sccs) -> do
       logMsg ("SCC: " ++ show (length sccs + 1) ++ " SCCs")
@@ -19,3 +20,4 @@ sccDecompose p cs =
   where
     toResult sccs (Progress []) = Progress (concat sccs)
     toResult _    _             = NoProgress
+
