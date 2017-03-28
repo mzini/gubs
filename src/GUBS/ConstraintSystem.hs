@@ -45,7 +45,7 @@ sccs = sccsWith $ \ from to -> any (`elem` funs from) (T.funs (C.lhs to))
 -- @x1+...+xn+k() >= c(x1,...,xn)@. Since k() is fresh such constraints are always sinlge node SCCs in `sccs`.
 sccs' :: Eq f => ConstraintSystem f v -> [ConstraintSystem f v]
 sccs' = sccsWith $ \from to ->
-  if isSli to
+  if isSli to || isSli from
     then any (`elem` funs from) (funs to)
     else any (`elem` funs from) (T.funs (C.lhs to))
   where
