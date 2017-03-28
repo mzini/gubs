@@ -67,7 +67,10 @@ partiallyInterpret cs = do
   i <- getInterpretation
   return (Progress [ I.pInterpret i l :>=: I.pInterpret i r | (l :>=: r) <- cs])
 
--- |
+-- | Propagates interpretation from right to left.
+--
+-- Given a paritally interpreted constraint @f(x) = f(x) >= x+1 = g(x)@ we set @f(x) = g(x) = x+1@ if @f@ only occurs
+-- once on the lhs of the constraint system.
 propagateUp :: (Eq c, IsNat c, SemiRing c, Integral c, Max c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, PP.Pretty v, Ord v, Monad m) => Processor f c v m
 propagateUp = propagateUp' ==> partiallyInterpret where
   propagateUp' cs = do
@@ -89,6 +92,7 @@ propagateUp = propagateUp' ==> partiallyInterpret where
                 where ar = length ts
         propagate _ g = return g
 
+-- | Like `propagateUp` but propagates interpretation from left to right.
 propagateDown :: (Eq c, IsNat c, SemiRing c, Integral c, Max c, PP.Pretty c, Eq f, Ord f, PP.Pretty f, PP.Pretty v, Ord v, Monad m) => Processor f c v m
 propagateDown = propagateDown' ==> partiallyInterpret where
   propagateDown' cs = do
@@ -110,6 +114,7 @@ propagateDown = propagateDown' ==> partiallyInterpret where
                 where ar = length ts
         propagate _ g = return g
 
+-- | Fixes the interpretation of symbols occuring only on the rhs of constraints to zero.
 eliminate :: (Eq c, IsNat c, Integral c, Num c, PP.Pretty f, PP.Pretty v, Eq v, Ord v, Monad m, Ord f) => Processor f c v m
 eliminate = partiallyInterpret <== \ cs ->  do
   i <- getInterpretation
@@ -125,6 +130,9 @@ eliminate = partiallyInterpret <== \ cs ->  do
         modifyInterpretation (\ i -> I.insert i f ar (fromNatural 0))
       return (Progress cs)
 
+-- | Simplify constraints setting variables not occuring on the rhs to zero.
+--
+-- > f(x,y) >= g(x)  ~>  f(x,y) >= g(x)
 instantiate :: (PP.Pretty f, PP.Pretty v, Eq v, Monad m) => Processor f c v m
 instantiate cs = toProgress <$> partitionEithers <$> mapM inst cs where
   toProgress (_,[]) = NoProgress
@@ -140,6 +148,12 @@ instantiate cs = toProgress <$> partitionEithers <$> mapM inst cs where
         logMsg (PP.text "Substituted:" PP.<+> PP.pretty c PP.<+> PP.text "↦" PP.<+> PP.pretty c')
         return (Right c')
 
+-- | Fixes the interpretation of constructor symbols to strongly linear polynomials.
+--
+-- TRS transformed via trs2cs-0 contain for each constructor symbol has a sli constraint. @fixSli@ fixates the
+-- interpretation for a constructor @c(x1,...,xn)@ to @x1+...+xn+1@.
+--
+-- This is clearly incomplete. And as experiments show only rarely useful.
 fixSli :: (Ord f, PP.Pretty f, IsNat c, Integral c, Additive c, Eq c, Ord v, Monad m) => Processor f c v m
 fixSli = partiallyInterpret <== \ cs -> do
   i <- getInterpretation
@@ -159,6 +173,6 @@ fixSli = partiallyInterpret <== \ cs -> do
       forM fs $ \ (f,ar) -> do
         logMsg (PP.text "Fixate:" PP.<+> PP.pretty f PP.<> PP.text "/" PP.<> PP.int ar)
         let sli = sumA (MP.variable <$> take ar I.variables) .+ (fromNatural 1)
-        modifyInterpretation (\ i -> I.insert i f ar sli)
+        modifyInterpretation (\i' -> I.insert i' f ar sli)
       return (Progress cs)
 
