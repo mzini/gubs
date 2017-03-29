@@ -1,11 +1,11 @@
 (>= (f46 (var x27)) (var x27))
 (>=
- (f2 (var x27) (f47 ()))
+ (f2 (var x27) (f47))
  (f4 (f46 (var x27))))
 (>= (f48 (var x3)) (var x3))
 (>=
  (f1 (var x3))
- (f3 (f47 ()) (f48 (var x3))))
+ (f3 (f47) (f48 (var x3))))
 (>=
  (f4 (+ (var x7) 1))
  (var x7))

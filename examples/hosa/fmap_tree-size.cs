@@ -1,19 +1,19 @@
 (>= (f60 (var x21)) (var x21))
 (>=
- (f1 (var x21) (f61 ()))
+ (f1 (var x21) (f61))
  (+ (f60 (var x21)) 1))
 (>= (f62 (var x2)) (var x2))
 (>= (f63 (var x1)) (var x1))
 (>=
  (f5 (var x1) (var x2))
  (f3
-  (f61 ())
+  (f61)
   (f63 (var x1))
   (f62 (var x2))))
 (>=
  (f4 (var x1) (var x2))
  (f2
-  (f61 ())
+  (f61)
   (f63 (var x1))
   (f62 (var x2))))
 (>= (f64 (var x35)) (var x35))

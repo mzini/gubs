@@ -5,24 +5,24 @@
  (f6
   (f110 (var x4))
   (f111 (var x50))))
-(>= (f113 ()) 0)
+(>= (f113) 0)
 (>= (f114 (var x3)) (var x3))
 (>=
  (f7 (var x3) (var x4))
  (f4
   (f112 (var x4))
-  (f113 ())
+  (f113)
   (f114 (var x3))))
 (>= (f115 (var x66)) (var x66))
 (>=
- (f1 (var x66) (f116 ()))
+ (f1 (var x66) (f116))
  (f5 (f115 (var x66))))
 (>= (f117 (var x8)) (var x8))
 (>= (f118 (var x7)) (var x7))
 (>=
  (f6 (var x7) (var x8))
  (f2
-  (f116 ())
+  (f116)
   (f117 (var x8))
   (f118 (var x7))))
 (>= (f119 (var x11)) (var x11))

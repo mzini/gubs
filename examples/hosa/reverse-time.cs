@@ -8,21 +8,21 @@
  (+
   (f3
    (f56 (var x2))
-   (f59 ())
+   (f59)
    (f60 (var x2) (var x3)))
   (f57 (var x3))))
-(>= (f59 ()) 0)
+(>= (f59) 0)
 (>=
  (f60 (var x2) (var x3))
  (f58 (var x2) (var x3)))
 (>=
  (f61 (var x2) (var x3))
  (+
-  (f2 (f56 (var x2)) (f59 ()))
+  (f2 (f56 (var x2)) (f59))
   (f60 (var x2) (var x3))))
 (>=
  (f4 (var x2))
- (f1 (f56 (var x2)) (f59 ())))
+ (f1 (f56 (var x2)) (f59)))
 (>=
  (+ (f5 (var x2)) (var x3))
  (+ (f61 (var x2) (var x3)) 1))
