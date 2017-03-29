@@ -25,6 +25,9 @@ domain (Inter m) = M.keys m
 image :: Interpretation f c -> [P.MaxPoly Var c]
 image (Inter m) = M.elems m
 
+maxDegree :: Interpretation f c -> Int
+maxDegree = maximum . fmap (P.degree . snd) . toList
+
 get :: Ord f => Interpretation f c -> f -> Int -> Maybe (P.MaxPoly Var c)
 get (Inter m) f i = M.lookup (f,i) m
 

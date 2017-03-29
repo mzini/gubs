@@ -124,7 +124,6 @@ splitMax (Max p q)  = splitMax p ++ splitMax q
 --   splitMaxPoly (Plus p1 p2) = splitBinOp Plus p1 p2
 --   splitMaxPoly (Mult p1 p2) = splitBinOp Mult p1 p2  
       
--- pretty printing
 
 simp :: (Ord c, Ord v, IsNat c, SemiRing c) => MaxPoly v c -> MaxPoly v c
 simp = fromPolyList . filterSubsumed . nub . splitMax where -- 
@@ -137,6 +136,15 @@ simp = fromPolyList . filterSubsumed . nub . splitMax where --
   p1 `subsumes` p2 =
     and [ c1 >= c2 | (c1 :>=: c2) <- P.absolutePositive (p1 `P.minus` p2)]
     && p1 /= p2
+
+degree :: MaxPoly v c -> Int
+degree (Var _)    = 1
+degree (Const _)  = 0
+degree (Plus p q) = degree p `max` degree q
+degree (Max p q)  = degree p `max` degree q
+degree (Mult p q) = degree p   +   degree q
+
+-- pretty printing
 
 instance (Eq c, Ord v, IsNat c, SemiRing c, PP.Pretty v, PP.Pretty c) => PP.Pretty (MaxPoly v c) where
   -- pretty (Var v) = PP.pretty v
