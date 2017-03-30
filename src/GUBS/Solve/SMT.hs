@@ -50,7 +50,13 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 data Solver = MiniSmt | Z3 deriving (Show)
 
-data PolyShape = Mixed | MultMixed deriving (Eq, Show)
+data PolyShape  f
+  = Mixed 
+  | MultMixed 
+  | Custom 
+     -- (f -> Maybe (AbstractPoly f I.Var))
+     (f -> Maybe [P.Monomial I.Var])
+     (PolyShape  f)
 
 data MM = ZeroOut | DecreaseCoeff | ShiftMax deriving (Show)
 
@@ -81,15 +87,15 @@ exhaustiveM s = s `andThenM` tryM (exhaustiveM s)
 noneM :: SMTMinimization
 noneM = Success
 
-data SMTOpts =
-  SMTOpts { shape    :: PolyShape
+data SMTOpts f =
+  SMTOpts { shape    :: PolyShape f
           , degree   :: Int 
           , maxCoeff :: Maybe Int
           , maxConst :: Maybe Int          
           , maxPoly  :: Bool
           , minimize :: SMTMinimization }
 
-defaultSMTOpts :: SMTOpts
+defaultSMTOpts :: SMTOpts f
 defaultSMTOpts =
   SMTOpts { shape = MultMixed
           , degree = 2
@@ -106,7 +112,7 @@ type AbstractMaxPoly s v = MP.MaxPoly v (AbstractCoefficient s)
 type AbstractPoly s v = P.Polynomial v (AbstractCoefficient s)
 type AbstractInterpretation s f = I.Interpretation f (AbstractCoefficient s)
 
-type SMT s f a = StateT (SMTOpts, Interpretation f Integer,AbstractInterpretation s f) (TraceT String (SolverM s)) a
+type SMT s f a = StateT (SMTOpts f, Interpretation f Integer,AbstractInterpretation s f) (TraceT String (SolverM s)) a
 
 liftSMT :: SMTSolver s => SolverM s a -> SMT s f a
 liftSMT = lift . lift
@@ -117,7 +123,7 @@ freshCoeff mub = liftSMT $ do
   whenJust mub $ \ ub -> assert (fromNatural ub `smtGeq` v)
   return v
 
-getOpts :: SMTSolver s => SMT s f SMTOpts
+getOpts :: SMTSolver s => SMT s f (SMTOpts f)
 getOpts = do (opts,_,_) <- get; return opts
 
 getAInter :: SMTSolver s => SMT s f (AbstractInterpretation s f)
@@ -127,8 +133,8 @@ getCInter :: SMTSolver s => SMT s f (Interpretation f Integer)
 getCInter = do (_,ci,_) <- get; return ci
 
 
-freshPoly :: SMTSolver s => Int -> SMT s f (AbstractMaxPoly s I.Var)
-freshPoly ar = do
+freshPoly :: SMTSolver s => (f,Int) -> SMT s f (AbstractMaxPoly s I.Var)
+freshPoly (f,ar) = do
   SMTOpts {..} <- getOpts
   -- logMsg p
   if maxPoly
@@ -152,6 +158,11 @@ freshPoly ar = do
                          | ds <- replicateM ar [0..degree]
                          , sum ds <= degree ]
 
+    template (Custom g s) degree = case g f of
+      Just ms  -> sumA <$> sequence [ toPoly ps' | m <- ms, let ps = P.toPowers m, let ps' = filter k ps ]
+        where k (I.V v, i) = v >= 0 && v < ar && i > 0
+      Nothing -> template s degree
+
     exclusive ps = assert $ 
       smtBigAnd [ smtAll (smtEq zero . fst) ms `smtOr` smtAny dominating ms
                 | p <- ps, let ms = [(c,m) | (c,m) <- P.toMonos p]] 
@@ -173,7 +184,7 @@ interpret = T.interpretM (return . MP.variable) i where
           Nothing -> addFreshPoly
           Just p -> return p
       addFreshPoly = do
-        p <- freshPoly ar
+        p <- freshPoly (f,ar)
         modify (\ (opts,inter,ainter) -> (opts,inter,I.insert ainter f ar p))
         return p
 
@@ -298,7 +309,7 @@ solveM cs = do
     dio (Geq l r) = smtBigAnd [ p `smtGeq` q | (p :>=: q) <- P.absolutePositive (l `P.minus` r) ]
 
 
-smt :: (Show f, PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => Solver -> SMTOpts -> Processor f Integer v m
+smt :: (Show f, PP.Pretty f, PP.Pretty v, Ord f, Ord v, MonadIO m) => Solver -> SMTOpts f -> Processor f Integer v m
 smt _ _ [] = return NoProgress
 smt solver opts cs = do
   inter <- getInterpretation
