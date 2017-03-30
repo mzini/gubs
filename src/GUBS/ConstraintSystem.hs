@@ -37,6 +37,10 @@ sccsWith p cs = map flattenSCC sccs' where
   ecs = zip [0 ..] cs
   succs from = [ j | (j, to) <- ecs, p from to ]
 
+-- MS: counterexample completeness
+-- (1) f(x) >= g(x)
+-- (2) x    >= g(x)
+-- we obtain (2) -> (1); if we set (1) f(x) = 0 >= 0 = g(x) we obtain (2) x >= 0
 -- | Default scc decomposition.
 sccs :: Eq f => ConstraintSystem f v -> [ConstraintSystem f v]
 sccs = sccsWith $ \ from to -> any (`elem` funs from) (T.funs (C.lhs to))

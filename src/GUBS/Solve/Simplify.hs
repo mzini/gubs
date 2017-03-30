@@ -67,6 +67,9 @@ partiallyInterpret cs = do
   i <- getInterpretation
   return (Progress [ I.pInterpret i l :>=: I.pInterpret i r | (l :>=: r) <- cs])
 
+-- TODO: MS: variant of it that inlines symbols
+-- f(x) >= g(x) + 1
+-- h(x) >= f(h(x)) ~> f(x) = g(x) + 1, h(x) >= g(h(x)) + 1
 -- | Propagates interpretation from right to left.
 --
 -- Given a paritally interpreted constraint @f(x) = f(x) >= x+1 = g(x)@ we set @f(x) = g(x) = x+1@ if @f@ only occurs
@@ -132,7 +135,7 @@ eliminate = partiallyInterpret <== \ cs ->  do
 
 -- | Simplify constraints setting variables not occuring on the rhs to zero.
 --
--- > f(x,y) >= g(x)  ~>  f(x,y) >= g(x)
+-- > f(x,y) >= g(x)  ~>  f(x,0) >= g(x)
 instantiate :: (PP.Pretty f, PP.Pretty v, Eq v, Monad m) => Processor f c v m
 instantiate cs = toProgress <$> partitionEithers <$> mapM inst cs where
   toProgress (_,[]) = NoProgress
