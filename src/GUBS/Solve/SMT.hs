@@ -48,14 +48,13 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 -- options
 ----------------------------------------------------------------------
 
-data Solver = MiniSmt | Z3 deriving (Show)
+data Solver = MiniSmt | Z3 | ZThree deriving (Show)
 
 data PolyShape  f
   = Mixed 
   | MultMixed 
   | Custom 
-     -- (f -> Maybe (AbstractPoly f I.Var))
-     (f -> Maybe [P.Monomial I.Var])
+     (f -> Maybe [(Maybe Int, Maybe Int, P.Monomial I.Var)])
      (PolyShape  f)
 
 data MM = ZeroOut | DecreaseCoeff | ShiftMax deriving (Show)
@@ -117,9 +116,10 @@ type SMT s f a = StateT (SMTOpts f, Interpretation f Integer,AbstractInterpretat
 liftSMT :: SMTSolver s => SolverM s a -> SMT s f a
 liftSMT = lift . lift
 
-freshCoeff :: SMTSolver s => Maybe Int -> SMT s f (AbstractCoefficient s)
-freshCoeff mub = liftSMT $ do
+freshCoeff :: SMTSolver s => Maybe Int -> Maybe Int -> SMT s f (AbstractCoefficient s)
+freshCoeff mlb mub = liftSMT $ do
   v <- E.variable <$> freshNat
+  whenJust mlb $ \ lb -> assert (v `smtGeq` fromNatural lb)
   whenJust mub $ \ ub -> assert (fromNatural ub `smtGeq` v)
   return v
 
@@ -147,7 +147,7 @@ freshPoly (f,ar) = do
     toPoly powers = do
       let mono = [ P.variable v .^ i | (v,i) <- powers, i > 0]
       SMTOpts {..} <- getOpts
-      c <- freshCoeff (if null mono then maxConst else maxCoeff)
+      c <- freshCoeff Nothing (if null mono then maxConst else maxCoeff)
       return (P.coefficient c .* prod mono)
     template MultMixed degree =
       sumA <$> sequence [ toPoly [ (v,1::Int) | v <- vs]
@@ -159,9 +159,16 @@ freshPoly (f,ar) = do
                          , sum ds <= degree ]
 
     template (Custom g s) degree = case g f of
-      Just ms  -> sumA <$> sequence [ toPoly ps' | m <- ms, let ps = P.toPowers m, let ps' = filter k ps ]
-        where k (I.V v, i) = v >= 0 && v < ar && i > 0
+      Just ms -> sumA <$> sequence [ toPoly' m | m <- ms ]
       Nothing -> template s degree
+    toPoly' (mlb,mub,m) = do
+      let mono = [ P.variable v .^ i | (v@(I.V j),i) <- P.toPowers m, i > 0, j >= 0, j < ar ]
+      SMTOpts {..} <- getOpts
+      c <- case (mlb,mub) of
+        (Just i, Just j)   -> if i == j then return (fromNatural i) else freshCoeff mlb mub
+        (Nothing, Nothing) -> freshCoeff Nothing (if null mono then maxConst else maxCoeff)
+        _                  -> freshCoeff mlb mub
+      return (P.coefficient c .* prod mono)
 
     exclusive ps = assert $ 
       smtBigAnd [ smtAll (smtEq zero . fst) ms `smtOr` smtAny dominating ms
@@ -315,6 +322,7 @@ smt solver opts cs = do
   inter <- getInterpretation
   let run Z3 = mapTraceT (liftIO . z3)           $ evalStateT (solveM cs) (opts,inter,I.empty)
       run MiniSmt = mapTraceT (liftIO . miniSMT) $ evalStateT (solveM cs) (opts,inter,I.empty)
+      run ZThree  = mapTraceT (liftIO . zthree) $ evalStateT (solveM cs) (opts,inter,I.empty)
   mi <- liftTrace (run solver)
   case mi of
     Nothing -> return NoProgress
