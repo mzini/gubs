@@ -8,4 +8,5 @@ extra-deps:
 - smtlib2-debug-1.0
 - atto-lisp-0.2.2.2
 - data-fix-0.0.3
+- z3-4.1.0
 resolver: lts-7.11

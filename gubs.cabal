@@ -1,5 +1,5 @@
 name:                gubs
-version:             0.3.0.1
+version:             0.3.1.0
 license:             MIT
 license-file:        LICENSE
 author:              Martin Avanzini
@@ -27,6 +27,7 @@ library
                    GUBS.Solver.Class
                    GUBS.Solver.Formula                   
                    GUBS.Solver.SMTLib
+                   GUBS.Solver.ZThree
                    GUBS.Solver.MiniSMT
                    GUBS.Utils
                    GUBS
@@ -45,7 +46,8 @@ library
                        ansi-wl-pprint,
                        multiset,
                        time,
-                       parsec 
+                       parsec,
+                       z3 
   hs-source-dirs:      src
   default-language:    Haskell2010
   default-extensions:  StandaloneDeriving,
