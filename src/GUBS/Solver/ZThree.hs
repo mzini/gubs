@@ -24,7 +24,7 @@ instance SMTSolver ZThree where
   freshBool = BLit <$> Z.mkFreshBoolVar "b"
   freshNat  = do
     n <- Z.mkFreshIntVar "n"
-    z <- Z.mkIntNum 1
+    z <- Z.mkIntNum 0
     Z.assert =<< n `Z.mkGe` z
     return $ NLit n
 
