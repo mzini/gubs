@@ -45,10 +45,15 @@ import qualified GUBS.Solver.Formula as F
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
+
 -- options
 ----------------------------------------------------------------------
 
+#ifdef WithZ3
 data Solver = MiniSmt | Z3 | ZThree deriving (Show)
+#else
+data Solver = MiniSmt | Z3 deriving (Show)
+#endif
 
 data PolyShape  f
   = Mixed 
@@ -322,7 +327,9 @@ smt solver opts cs = do
   inter <- getInterpretation
   let run Z3 = mapTraceT (liftIO . z3)           $ evalStateT (solveM cs) (opts,inter,I.empty)
       run MiniSmt = mapTraceT (liftIO . miniSMT) $ evalStateT (solveM cs) (opts,inter,I.empty)
+#ifdef WithZ3
       run ZThree  = mapTraceT (liftIO . zthree) $ evalStateT (solveM cs) (opts,inter,I.empty)
+#endif
   mi <- liftTrace (run solver)
   case mi of
     Nothing -> return NoProgress

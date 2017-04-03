@@ -8,6 +8,9 @@ category:            Logic
 build-type:          Simple
 cabal-version:       >=1.10
 
+Flag Z3
+  Description: Compile with Z3 native bindings.
+  Default: False
 
 library
   exposed-modules: GUBS.Algebra
@@ -27,7 +30,6 @@ library
                    GUBS.Solver.Class
                    GUBS.Solver.Formula                   
                    GUBS.Solver.SMTLib
-                   GUBS.Solver.ZThree
                    GUBS.Solver.MiniSMT
                    GUBS.Utils
                    GUBS
@@ -46,11 +48,11 @@ library
                        ansi-wl-pprint,
                        multiset,
                        time,
-                       parsec,
-                       z3 
+                       parsec
   hs-source-dirs:      src
   default-language:    Haskell2010
   default-extensions:  StandaloneDeriving,
+                       CPP,
                        DeriveFunctor,
                        DeriveFoldable,
                        DeriveTraversable,
@@ -66,6 +68,12 @@ library
                        TypeFamilies,
                        TupleSections,
                        GADTs
+
+  if flag(Z3)
+    exposed-modules: GUBS.Solver.ZThree
+    build-depends:   z3
+    extra-libraries: z3
+    cpp-options:     -DWithZ3
 
 executable gubs
  hs-source-dirs: gubs

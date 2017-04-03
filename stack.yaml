@@ -10,3 +10,6 @@ extra-deps:
 - data-fix-0.0.3
 - z3-4.1.0
 resolver: lts-7.11
+flags:
+  gubs:
+    Z3: false
