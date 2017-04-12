@@ -1,7 +1,10 @@
 flags: {}
 packages:
 - '.'
-- '../monad-trace'
+- location:
+    git: https://github.com/mzini/monad-trace
+    commit: 64ac8dc558e62b82711148f0570b6f12c3b14f0a
+  extra-dep: true
 extra-deps:
 - smtlib2-1.0
 - smtlib2-pipe-1.0

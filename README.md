@@ -1,20 +1,20 @@
 # GUBS
 The acronym GUBS stands for GUBS Upper Bound Solver.
 
-Given a set of (in)equalities over arithmetical expressions and 
-uninterpreted functions, GUBS is trying to find a model, 
-i.e. interpretation into the naturals. In its current form, 
+Given a set of (in)equalities over arithmetical expressions and
+uninterpreted functions, GUBS is trying to find a model,
+i.e. interpretation into the naturals. In its current form,
 these interpretations are weakly monotone polynomials, possibly containing max.
 
 Current, GUBS incorporates a dedicated synthesis technique relying on SMT-solvers,
-using either [minismt](http://cl-informatik.uibk.ac.at/software/minismt/) or 
-[z3](https://github.com/Z3Prover/z3), 
+using either [minismt](http://cl-informatik.uibk.ac.at/software/minismt/) or
+[z3](https://github.com/Z3Prover/z3),
 various simplification techniques and a per SCC analysis.
 
-GUBS has been tested only on Linux, but may work on other platforms. 
+GUBS has been tested only on Linux, but may work on other platforms.
 On linux, in order to use any of the supported SMT-solvers, they have to be accessible in `$PATH`.
 
-GUBS comes along as a stand-alone executable as well as a Haskell-library. 
+GUBS comes along as a stand-alone executable as well as a Haskell-library.
 
 ## Stand-alone executable
 
@@ -24,9 +24,9 @@ Constraint systems are specified as S-Expressions, according to the following Gr
 ~~~~
 SYSTEM     = CONSTRAINT ... CONSTRAINT
 CONSTRAINT = (>= TERM TERM)
-TERM       = (var IDENT)           -- variable 
+TERM       = (var IDENT)           -- variable
            | (+ TERM TERM)         -- addition
-           | (* TERM TERM)         -- addition	   
+           | (* TERM TERM)         -- addition	
            | (max TERM TERM)       -- maximum
            | (IDENT TERM ... TERM) -- uninterpreted function
            | INTEGER               -- constant
@@ -45,11 +45,11 @@ In its current form, `gubs` starts the search of linear polynomials, iteratively
 increasing the degree should this search fail.
 
 ~~~~
-$ gubs/examples> cat ugo1.cs 
- (>= (f (var x)) 
+$ gubs/examples> cat ugo1.cs
+ (>= (f (var x))
      (g (h (var x))))
- (>= (h 0) 1)    
- (>= (h (+ (var x) 1)) 
+ (>= (h 0) 1)
+ (>= (h (+ (var x) 1))
      (f (var x)))
  (>= (g (var x))
      (+ 1 (var x)))
@@ -69,7 +69,7 @@ The module GUBS exports all the essential functionality.
 ghci> :module +GUBS
 ~~~~
 
-Let us define a simple constraint system over two unary functions `f` and `g`. 
+Let us define a simple constraint system over two unary functions `f` and `g`.
 ~~~~
 ghci GUBS> let f n = Fun 'f' [n]
 ghci GUBS> let g n = Fun 'g' [n]
@@ -102,4 +102,17 @@ ghci GUBS GUBS.Utils> putDocLn (interpretation r)
 ~~~~
 
 
+## Installation
+
+The recommended way to install `gubs` is via
+[`stack`](http://haskellstack.org).
+
+```bash
+$ git clone http://github.com/ComputationWithBoundedResources/gubs \
+  && cd gubs \
+  && stack build gubs
+$ # example execution
+$ stack exec gubs -- examples/hosa/prependall-time.cs
+$ # the executable can be found at gubs/.stack-work/install/someVersionSpecificDirectories/bin/gubs
+```
 
