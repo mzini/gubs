@@ -113,6 +113,6 @@ $ git clone http://github.com/ComputationWithBoundedResources/gubs \
   && stack build gubs
 $ # example execution
 $ stack exec gubs -- examples/hosa/prependall-time.cs
-$ # the executable can be found at gubs/.stack-work/install/someVersionSpecificDirectories/bin/gubs
+$ # the executable can also be found at .stack-work/install/someVersionSpecificDirectories/bin/gubs
 ```
 
