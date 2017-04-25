@@ -18,27 +18,27 @@ library
                    GUBS.Constraint
                    GUBS.ConstraintSystem
                    GUBS.Polynomial
-                   GUBS.MaxPolynomial                   
+                   GUBS.MaxPolynomial
                    GUBS.Expression
                    GUBS.Interpretation
                    GUBS.Solve
                    GUBS.Solve.Strategy
                    GUBS.Solve.SMT
                    GUBS.Solve.SCC
-                   GUBS.Solve.Simplify                                      
-                   GUBS.Solver                               
+                   GUBS.Solve.Simplify
+                   GUBS.Solver
                    GUBS.Solver.Class
-                   GUBS.Solver.Formula                   
+                   GUBS.Solver.Formula
                    GUBS.Solver.SMTLib
+                   GUBS.Solver.SMTLib2.Pipe
                    GUBS.Solver.MiniSMT
                    GUBS.Utils
                    GUBS
-  other-extensions:    
   build-depends:       base,
                        containers,
                        smtlib2,
                        smtlib2-pipe,
-                       smtlib2-debug,                       
+                       smtlib2-debug,
                        mtl,
                        monad-trace,
                        transformers,
@@ -48,9 +48,13 @@ library
                        ansi-wl-pprint,
                        multiset,
                        time,
-                       parsec
+                       parsec,
+                       stm,
+                       typed-process
+                       -- streaming-commons
   hs-source-dirs:      src
   default-language:    Haskell2010
+  other-extensions:
   default-extensions:  StandaloneDeriving,
                        CPP,
                        DeriveFunctor,
@@ -69,6 +73,7 @@ library
                        TupleSections,
                        GADTs
 
+  ghc-options:    -threaded -Wall -fno-warn-orphans
   if flag(Z3)
     exposed-modules: GUBS.Solver.ZThree
     build-depends:   z3
@@ -78,13 +83,13 @@ library
 executable gubs
  hs-source-dirs: gubs
  ghc-options:    -threaded -Wall -fno-warn-orphans -O2
- default-language: Haskell2010 
+ default-language: Haskell2010
  main-is: Main.hs
  build-depends: gubs,
                 base,
-                mtl,       
+                mtl,
                 containers,
-                ansi-wl-pprint,                
+                ansi-wl-pprint,
                 cmdargs
  default-extensions: TypeOperators,
                      FlexibleContexts,
