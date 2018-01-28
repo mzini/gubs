@@ -85,9 +85,9 @@ argsDL :: Term f v -> [Term f v] -> [Term f v]
 argsDL Var{} = id
 argsDL Const{} = id            
 argsDL (Fun f ts) = (++) ts . foldr ((.) . argsDL) id ts
-argsDL (Mult t1 t2) = argsDL t1 . argsDL t2 
-argsDL (Plus t1 t2) = argsDL t1 . argsDL t2 
-argsDL (Max t1 t2) = argsDL t1 . argsDL t2        
+argsDL (Mult t1 t2) = (++) [t1,t2] . argsDL t1 . argsDL t2 
+argsDL (Plus t1 t2) = (++) [t1,t2] . argsDL t1 . argsDL t2 
+argsDL (Max t1 t2) = (++) [t1,t2] . argsDL t1 . argsDL t2        
                        
 args :: Term f v -> [Term f v]       
 args = flip argsDL []
