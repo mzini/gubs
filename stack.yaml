@@ -3,7 +3,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/mzini/monad-trace
-    commit: 64ac8dc558e62b82711148f0570b6f12c3b14f0a
+    commit: 488bd2c09e51cbd16581cdd61fe13059ae62e45e
   extra-dep: true
 extra-deps:
 - smtlib2-1.0
@@ -13,7 +13,7 @@ extra-deps:
 - data-fix-0.0.3
 - z3-4.1.0
 - typed-process-0.1.0.0
-resolver: lts-7.11
+resolver: lts-9.12
 flags:
   gubs:
     Z3: false
